@@ -1149,15 +1149,16 @@ class AlexaThermostatController(AlexaCapability):
         if name == "thermostatMode":
             if self.entity.domain == water_heater.DOMAIN:
                 return None
+
             preset = self.entity.attributes.get(climate.ATTR_PRESET_MODE)
 
-            mode: dict[str, str] | str | None
             if preset in API_THERMOSTAT_PRESETS:
-                mode = API_THERMOSTAT_PRESETS[preset]
-            elif self.entity.state == STATE_UNKNOWN:
+                return API_THERMOSTAT_PRESETS[preset]
+
+            if self.entity.state == STATE_UNKNOWN:
                 return None
-            else:
-                if self.entity.state not in API_THERMOSTAT_MODES:
+
+            if self.entity.state not in API_THERMOSTAT_MODES:
                     _LOGGER.error(
                         "%s (%s) has unsupported state value '%s'",
                         self.entity.entity_id,
@@ -1165,18 +1166,19 @@ class AlexaThermostatController(AlexaCapability):
                         self.entity.state,
                     )
                     raise UnsupportedProperty(name)
-                mode = API_THERMOSTAT_MODES[HVACMode(self.entity.state)]
-            return mode
 
-        unit = self.hass.config.units.temperature_unit
-        if name == "targetSetpoint":
-            temp = self.entity.attributes.get(ATTR_TEMPERATURE)
-        elif name == "lowerSetpoint":
-            temp = self.entity.attributes.get(climate.ATTR_TARGET_TEMP_LOW)
-        elif name == "upperSetpoint":
-            temp = self.entity.attributes.get(climate.ATTR_TARGET_TEMP_HIGH)
-        else:
+            return API_THERMOSTAT_MODES[HVACMode(self.entity.state)]
+
+        setPoints_map = {
+        "targetSetpoint": ATTR_TEMPERATURE,
+        "lowerSetpoint": climate.ATTR_TARGET_TEMP_LOW,
+        "upperSetpoint": climate.ATTR_TARGET_TEMP_HIGH,
+        }
+
+        if name not in setPoints_map:
             raise UnsupportedProperty(name)
+
+        temp = self.entity.attributes.get(setPoints_map[name])
 
         if temp is None:
             return None
@@ -1189,6 +1191,7 @@ class AlexaThermostatController(AlexaCapability):
             )
             return None
 
+        unit = self.hass.config.units.temperature_unit
         return {"value": temp, "scale": API_TEMP_UNITS[unit]}
 
     def configuration(self) -> dict[str, Any] | None:
