@@ -1159,20 +1159,21 @@ class AlexaThermostatController(AlexaCapability):
                 return None
 
             if self.entity.state not in API_THERMOSTAT_MODES:
-                    _LOGGER.error(
-                        "%s (%s) has unsupported state value '%s'",
-                        self.entity.entity_id,
-                        type(self.entity),
-                        self.entity.state,
-                    )
-                    raise UnsupportedProperty(name)
+                _LOGGER.error(
+                    "%s (%s) has unsupported state value '%s'",
+                    self.entity.entity_id,
+                    type(self.entity),
+                    self.entity.state,
+                )
+                raise UnsupportedProperty(name)
 
             return API_THERMOSTAT_MODES[HVACMode(self.entity.state)]
 
+        #hej
         setPoints_map = {
-        "targetSetpoint": ATTR_TEMPERATURE,
-        "lowerSetpoint": climate.ATTR_TARGET_TEMP_LOW,
-        "upperSetpoint": climate.ATTR_TARGET_TEMP_HIGH,
+            "targetSetpoint": ATTR_TEMPERATURE,
+            "lowerSetpoint": climate.ATTR_TARGET_TEMP_LOW,
+            "upperSetpoint": climate.ATTR_TARGET_TEMP_HIGH,
         }
 
         if name not in setPoints_map:
