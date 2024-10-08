@@ -1170,16 +1170,16 @@ class AlexaThermostatController(AlexaCapability):
             return API_THERMOSTAT_MODES[HVACMode(self.entity.state)]
 
         #hej
-        setPoints_map = {
+        setpoints_map = {
             "targetSetpoint": ATTR_TEMPERATURE,
             "lowerSetpoint": climate.ATTR_TARGET_TEMP_LOW,
             "upperSetpoint": climate.ATTR_TARGET_TEMP_HIGH,
         }
 
-        if name not in setPoints_map:
+        if name not in setpoints_map:
             raise UnsupportedProperty(name)
 
-        temp = self.entity.attributes.get(setPoints_map[name])
+        temp = self.entity.attributes.get(setpoints_map[name])
 
         if temp is None:
             return None
