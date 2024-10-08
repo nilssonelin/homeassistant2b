@@ -350,67 +350,8 @@ class AuthStore:
             group_without_policy,
             perm_lookup,
         )
-        for cred_dict in data["credentials"]:
-            credential = models.Credentials(
-                id=cred_dict["id"],
-                is_new=False,
-                auth_provider_type=cred_dict["auth_provider_type"],
-                auth_provider_id=cred_dict["auth_provider_id"],
-                data=cred_dict["data"],
-            )
-            credentials[cred_dict["id"]] = credential
-            users[cred_dict["user_id"]].credentials.append(credential)
 
-        for rt_dict in data["refresh_tokens"]:
-            # Filter out the old keys that don't have jwt_key (pre-0.76)
-            if "jwt_key" not in rt_dict:
-                continue
-
-            created_at = dt_util.parse_datetime(rt_dict["created_at"])
-            if created_at is None:
-                getLogger(__name__).error(
-                    (
-                        "Ignoring refresh token %(id)s with invalid created_at "
-                        "%(created_at)s for user_id %(user_id)s"
-                    ),
-                    rt_dict,
-                )
-                continue
-
-            if (token_type := rt_dict.get("token_type")) is None:
-                if rt_dict["client_id"] is None:
-                    token_type = models.TOKEN_TYPE_SYSTEM
-                else:
-                    token_type = models.TOKEN_TYPE_NORMAL
-
-            # old refresh_token don't have last_used_at (pre-0.78)
-            if last_used_at_str := rt_dict.get("last_used_at"):
-                last_used_at = dt_util.parse_datetime(last_used_at_str)
-            else:
-                last_used_at = None
-
-            token = models.RefreshToken(
-                id=rt_dict["id"],
-                user=users[rt_dict["user_id"]],
-                client_id=rt_dict["client_id"],
-                # use dict.get to keep backward compatibility
-                client_name=rt_dict.get("client_name"),
-                client_icon=rt_dict.get("client_icon"),
-                token_type=token_type,
-                created_at=created_at,
-                access_token_expiration=timedelta(
-                    seconds=rt_dict["access_token_expiration"]
-                ),
-                token=rt_dict["token"],
-                jwt_key=rt_dict["jwt_key"],
-                last_used_at=last_used_at,
-                last_used_ip=rt_dict.get("last_used_ip"),
-                expire_at=rt_dict.get("expire_at"),
-                version=rt_dict.get("version"),
-            )
-            if "credential_id" in rt_dict:
-                token.credential = credentials.get(rt_dict["credential_id"])
-            users[rt_dict["user_id"]].refresh_tokens[token.id] = token
+        self._process_refresh_tokens(data["refresh_tokens"], users, credentials)
 
         self._groups = groups
         self._users = users
@@ -539,6 +480,63 @@ class AuthStore:
             )
 
         return groups, users
+
+    def _process_refresh_tokens(
+        self,
+        refresh_token_data: list[dict[str, Any]],
+        users: dict[str, models.User],
+        credentials: dict[str, models.Credentials],
+    ) -> None:
+        for rt_dict in refresh_token_data:
+            # Filter out the old keys that don't have jwt_key (pre-0.76)
+            if "jwt_key" not in rt_dict:
+                continue
+
+            created_at = dt_util.parse_datetime(rt_dict["created_at"])
+            if created_at is None:
+                getLogger(__name__).error(
+                    (
+                        "Ignoring refresh token %(id)s with invalid created_at "
+                        "%(created_at)s for user_id %(user_id)s"
+                    ),
+                    rt_dict,
+                )
+                continue
+
+            if (token_type := rt_dict.get("token_type")) is None:
+                if rt_dict["client_id"] is None:
+                    token_type = models.TOKEN_TYPE_SYSTEM
+                else:
+                    token_type = models.TOKEN_TYPE_NORMAL
+
+            # Old refresh_token don't have last_used_at (pre-0.78)
+            if last_used_at_str := rt_dict.get("last_used_at"):
+                last_used_at = dt_util.parse_datetime(last_used_at_str)
+            else:
+                last_used_at = None
+
+            token = models.RefreshToken(
+                id=rt_dict["id"],
+                user=users[rt_dict["user_id"]],
+                client_id=rt_dict["client_id"],
+                # Use dict.get to keep backward compatibility
+                client_name=rt_dict.get("client_name"),
+                client_icon=rt_dict.get("client_icon"),
+                token_type=token_type,
+                created_at=created_at,
+                access_token_expiration=timedelta(
+                    seconds=rt_dict["access_token_expiration"]
+                ),
+                token=rt_dict["token"],
+                jwt_key=rt_dict["jwt_key"],
+                last_used_at=last_used_at,
+                last_used_ip=rt_dict.get("last_used_ip"),
+                expire_at=rt_dict.get("expire_at"),
+                version=rt_dict.get("version"),
+            )
+            if "credential_id" in rt_dict:
+                token.credential = credentials.get(rt_dict["credential_id"])
+            users[rt_dict["user_id"]].refresh_tokens[token.id] = token
 
     @callback
     def _build_token_id_to_user_id(self) -> None:
