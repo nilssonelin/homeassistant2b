@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import hmac
 import itertools
 from logging import getLogger
@@ -503,17 +503,8 @@ class AuthStore:
                 )
                 continue
 
-            if (token_type := rt_dict.get("token_type")) is None:
-                if rt_dict["client_id"] is None:
-                    token_type = models.TOKEN_TYPE_SYSTEM
-                else:
-                    token_type = models.TOKEN_TYPE_NORMAL
-
-            # Old refresh_token don't have last_used_at (pre-0.78)
-            if last_used_at_str := rt_dict.get("last_used_at"):
-                last_used_at = dt_util.parse_datetime(last_used_at_str)
-            else:
-                last_used_at = None
+            token_type = self._get_token_type(rt_dict)
+            last_used_at = self._parse_last_used_at(rt_dict)
 
             token = models.RefreshToken(
                 id=rt_dict["id"],
@@ -537,6 +528,22 @@ class AuthStore:
             if "credential_id" in rt_dict:
                 token.credential = credentials.get(rt_dict["credential_id"])
             users[rt_dict["user_id"]].refresh_tokens[token.id] = token
+
+    def _get_token_type(self, rt_dict: dict[str, Any]) -> Any:
+        """Determine the token type based on the refresh token dictionary."""
+        if (token_type := rt_dict.get("token_type")) is None:
+            return (
+                models.TOKEN_TYPE_SYSTEM
+                if rt_dict["client_id"] is None
+                else models.TOKEN_TYPE_NORMAL
+            )
+        return token_type
+
+    def _parse_last_used_at(self, rt_dict: dict[str, Any]) -> datetime | None:
+        """Parse the last used at date from the refresh token dictionary."""
+        if last_used_at_str := rt_dict.get("last_used_at"):
+            return dt_util.parse_datetime(last_used_at_str)
+        return None
 
     @callback
     def _build_token_id_to_user_id(self) -> None:
