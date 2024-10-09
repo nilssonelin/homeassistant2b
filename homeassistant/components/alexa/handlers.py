@@ -85,6 +85,7 @@ from .state_report import AlexaDirective, AlexaResponse, async_enable_proactive_
 _LOGGER = logging.getLogger(__name__)
 DIRECTIVE_NOT_SUPPORTED = "Entity does not support directive"
 ALEXA_THERMOSTAT_NAMESPACE = "Alexa.ThermostatController"
+ALEXA_SECURITY_PANEL_NAMESPACE = "Alexa.SecurityPanelController"
 
 MIN_MAX_TEMP = {
     climate.DOMAIN: {
@@ -1071,7 +1072,7 @@ async def async_api_reportstate(
     return directive.response(name="StateReport")
 
 
-@HANDLERS.register(("Alexa.SecurityPanelController", "Arm"))
+@HANDLERS.register((ALEXA_SECURITY_PANEL_NAMESPACE, "Arm"))
 async def async_api_arm(
     hass: ha.HomeAssistant,
     config: AbstractConfig,
@@ -1105,13 +1106,13 @@ async def async_api_arm(
     payload: dict[str, Any] = {"exitDelayInSeconds": 0}
 
     response = directive.response(
-        name="Arm.Response", namespace="Alexa.SecurityPanelController", payload=payload
+        name="Arm.Response", namespace=ALEXA_SECURITY_PANEL_NAMESPACE, payload=payload
     )
 
     response.add_context_property(
         {
             "name": "armState",
-            "namespace": "Alexa.SecurityPanelController",
+            "namespace": ALEXA_SECURITY_PANEL_NAMESPACE,
             "value": arm_state,
         }
     )
@@ -1119,7 +1120,7 @@ async def async_api_arm(
     return response
 
 
-@HANDLERS.register(("Alexa.SecurityPanelController", "Disarm"))
+@HANDLERS.register((ALEXA_SECURITY_PANEL_NAMESPACE, "Disarm"))
 async def async_api_disarm(
     hass: ha.HomeAssistant,
     config: AbstractConfig,
@@ -1150,7 +1151,7 @@ async def async_api_disarm(
     response.add_context_property(
         {
             "name": "armState",
-            "namespace": "Alexa.SecurityPanelController",
+            "namespace": ALEXA_SECURITY_PANEL_NAMESPACE,
             "value": "DISARMED",
         }
     )
