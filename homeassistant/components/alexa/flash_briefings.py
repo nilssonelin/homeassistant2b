@@ -53,13 +53,9 @@ class AlexaFlashBriefingView(http.HomeAssistantView):
         super().__init__()
         self.flash_briefings = flash_briefings
 
-    @callback
-    def get(
+    def _authorize_apipassword(
         self, request: http.HomeAssistantRequest, briefing_id: str
-    ) -> StreamResponse | tuple[bytes, HTTPStatus]:
-        """Handle Alexa Flash Briefing request."""
-        _LOGGER.debug("Received Alexa flash briefing request for: %s", briefing_id)
-
+    ) -> tuple[bytes, HTTPStatus] | None:
         if request.query.get(API_PASSWORD) is None:
             err = "No password provided for Alexa flash briefing: %s"
             _LOGGER.error(err, briefing_id)
@@ -78,48 +74,58 @@ class AlexaFlashBriefingView(http.HomeAssistantView):
             _LOGGER.error(err, briefing_id)
             return b"", HTTPStatus.NOT_FOUND
 
+        return None
+
+    def _briefing_output(self, item: dict) -> dict:
+        output = {}
+
+        conf_title = item.get(CONF_TITLE)
+        if conf_title is not None and isinstance(conf_title, template.Template):
+            output[ATTR_TITLE_TEXT] = item[CONF_TITLE].async_render(parse_result=False)
+        else:
+            output[ATTR_TITLE_TEXT] = conf_title
+
+        conf_text = item.get(CONF_TEXT)
+        if isinstance(conf_text, template.Template):
+            output[ATTR_MAIN_TEXT] = item[CONF_TEXT].async_render(parse_result=False)
+        elif conf_text is not None:
+            output[ATTR_MAIN_TEXT] = conf_text
+
+        if (uid := item.get(CONF_UID)) is None:
+            uid = str(uuid.uuid4())
+        output[ATTR_UID] = uid
+
+        conf_audio = item.get(CONF_AUDIO)
+        if isinstance(conf_audio, template.Template):
+            output[ATTR_STREAM_URL] = item[CONF_AUDIO].async_render(parse_result=False)
+        elif conf_audio is not None:
+            output[ATTR_STREAM_URL] = conf_audio
+
+        conf_display_url = item.get(CONF_DISPLAY_URL)
+        if isinstance(conf_display_url, template.Template):
+            output[ATTR_REDIRECTION_URL] = item[CONF_DISPLAY_URL].async_render(
+                parse_result=False
+            )
+        elif conf_display_url is not None:
+            output[ATTR_REDIRECTION_URL] = conf_display_url
+
+        output[ATTR_UPDATE_DATE] = dt_util.utcnow().strftime(DATE_FORMAT)
+        return output
+
+    @callback
+    def get(
+        self, request: http.HomeAssistantRequest, briefing_id: str
+    ) -> StreamResponse | tuple[bytes, HTTPStatus]:
+        """Handle Alexa Flash Briefing request."""
+        _LOGGER.debug("Received Alexa flash briefing request for: %s", briefing_id)
+        status = self._authorize_apipassword(request, briefing_id)
+        if status is not None:
+            return status
+
         briefing = []
 
         for item in self.flash_briefings.get(briefing_id, []):
-            output = {}
-            if item.get(CONF_TITLE) is not None:
-                if isinstance(item.get(CONF_TITLE), template.Template):
-                    output[ATTR_TITLE_TEXT] = item[CONF_TITLE].async_render(
-                        parse_result=False
-                    )
-                else:
-                    output[ATTR_TITLE_TEXT] = item.get(CONF_TITLE)
-
-            if item.get(CONF_TEXT) is not None:
-                if isinstance(item.get(CONF_TEXT), template.Template):
-                    output[ATTR_MAIN_TEXT] = item[CONF_TEXT].async_render(
-                        parse_result=False
-                    )
-                else:
-                    output[ATTR_MAIN_TEXT] = item.get(CONF_TEXT)
-
-            if (uid := item.get(CONF_UID)) is None:
-                uid = str(uuid.uuid4())
-            output[ATTR_UID] = uid
-
-            if item.get(CONF_AUDIO) is not None:
-                if isinstance(item.get(CONF_AUDIO), template.Template):
-                    output[ATTR_STREAM_URL] = item[CONF_AUDIO].async_render(
-                        parse_result=False
-                    )
-                else:
-                    output[ATTR_STREAM_URL] = item.get(CONF_AUDIO)
-
-            if item.get(CONF_DISPLAY_URL) is not None:
-                if isinstance(item.get(CONF_DISPLAY_URL), template.Template):
-                    output[ATTR_REDIRECTION_URL] = item[CONF_DISPLAY_URL].async_render(
-                        parse_result=False
-                    )
-                else:
-                    output[ATTR_REDIRECTION_URL] = item.get(CONF_DISPLAY_URL)
-
-            output[ATTR_UPDATE_DATE] = dt_util.utcnow().strftime(DATE_FORMAT)
-
+            output = self._briefing_output(item)
             briefing.append(output)
 
         return self.json(briefing)
