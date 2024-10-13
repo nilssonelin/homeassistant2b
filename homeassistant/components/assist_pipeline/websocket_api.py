@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator, Callable
 import contextlib
 import logging
 import math
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import voluptuous as vol
 
@@ -159,29 +159,9 @@ async def websocket_run(
         incoming_sample_rate = msg_input["sample_rate"]
         wake_word_phrase: str | None = None
 
-        if start_stage == PipelineStage.WAKE_WORD:
-            wake_word_settings = WakeWordSettings(
-                timeout=msg["input"].get("timeout", DEFAULT_WAKE_WORD_TIMEOUT),
-                audio_seconds_to_buffer=msg_input.get("audio_seconds_to_buffer", 0),
-            )
-        elif start_stage == PipelineStage.STT:
-            wake_word_phrase = msg["input"].get("wake_word_phrase")
-
-        async def stt_stream() -> AsyncGenerator[bytes]:
-            state = None
-
-            # Yield until we receive an empty chunk
-            while chunk := await audio_queue.get():
-                if incoming_sample_rate != SAMPLE_RATE:
-                    chunk, state = audioop.ratecv(
-                        chunk,
-                        SAMPLE_WIDTH,
-                        SAMPLE_CHANNELS,
-                        incoming_sample_rate,
-                        SAMPLE_RATE,
-                        state,
-                    )
-                yield chunk
+        wake_word_settings, wake_word_phrase = await _get_wake_word(
+            start_stage, msg, msg_input
+        )
 
         def handle_binary(
             _hass: HomeAssistant,
@@ -204,7 +184,7 @@ async def websocket_run(
             sample_rate=stt.AudioSampleRates.SAMPLERATE_16000,
             channel=stt.AudioChannels.CHANNEL_MONO,
         )
-        input_args["stt_stream"] = stt_stream()
+        input_args["stt_stream"] = _stt_stream(audio_queue, incoming_sample_rate)
         input_args["wake_word_phrase"] = wake_word_phrase
 
         # Audio settings
@@ -268,6 +248,40 @@ async def websocket_run(
         if unregister_handler is not None:
             # Unregister binary handler
             unregister_handler()
+
+
+async def _get_wake_word(
+    start_stage: PipelineStage, msg: dict[str, Any], msg_input: Any
+) -> tuple[WakeWordSettings | None, str | None]:
+    wake_word_settings = None
+    wake_word_phrase = None
+    if start_stage == PipelineStage.WAKE_WORD:
+        wake_word_settings = WakeWordSettings(
+            timeout=msg["input"].get("timeout", DEFAULT_WAKE_WORD_TIMEOUT),
+            audio_seconds_to_buffer=msg_input.get("audio_seconds_to_buffer", 0),
+        )
+    elif start_stage == PipelineStage.STT:
+        wake_word_phrase = msg["input"].get("wake_word_phrase")
+    return wake_word_settings, wake_word_phrase
+
+
+async def _stt_stream(
+    audio_queue: asyncio.Queue[bytes], incoming_sample_rate: Any | Literal[16000]
+) -> AsyncGenerator[bytes]:
+    state = None
+
+    # Yield until we receive an empty chunk
+    while chunk := await audio_queue.get():
+        if incoming_sample_rate != SAMPLE_RATE:
+            chunk, state = audioop.ratecv(
+                chunk,
+                SAMPLE_WIDTH,
+                SAMPLE_CHANNELS,
+                incoming_sample_rate,
+                SAMPLE_RATE,
+                state,
+            )
+        yield chunk
 
 
 @callback
@@ -401,29 +415,24 @@ def websocket_list_languages(
     pipeline_languages: set[str] | None = None
 
     if conv_language_tags and conv_language_tags != MATCH_ALL:
-        languages = set()
-        for language_tag in conv_language_tags:
-            dialect = language_util.Dialect.parse(language_tag)
-            languages.add(dialect.language)
-        pipeline_languages = languages
+        pipeline_languages = _get_language_tags(conv_language_tags)
 
     if stt_language_tags:
-        languages = set()
-        for language_tag in stt_language_tags:
-            dialect = language_util.Dialect.parse(language_tag)
-            languages.add(dialect.language)
+        stt_languages = _get_language_tags(stt_language_tags)
         if pipeline_languages is not None:
-            pipeline_languages = language_util.intersect(pipeline_languages, languages)
+            pipeline_languages = language_util.intersect(
+                pipeline_languages, stt_languages
+            )
         else:
-            pipeline_languages = languages
+            pipeline_languages = stt_languages
 
     if tts_language_tags:
         languages = set()
-        for language_tag in tts_language_tags:
-            dialect = language_util.Dialect.parse(language_tag)
-            languages.add(dialect.language)
+        tts_languages = _get_language_tags(tts_language_tags)
         if pipeline_languages is not None:
-            pipeline_languages = language_util.intersect(pipeline_languages, languages)
+            pipeline_languages = language_util.intersect(
+                pipeline_languages, tts_languages
+            )
         else:
             pipeline_languages = languages
 
@@ -435,6 +444,14 @@ def websocket_list_languages(
             )
         },
     )
+
+
+def _get_language_tags(_language_tags: set[str] | Literal["*"]) -> set:
+    languages = set()
+    for language_tag in _language_tags:
+        dialect = language_util.Dialect.parse(language_tag)
+        languages.add(dialect.language)
+    return languages
 
 
 @websocket_api.require_admin
