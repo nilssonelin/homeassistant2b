@@ -341,7 +341,7 @@ class AuthStore:
             group_without_policy,
         ) = self._process_groups(data.get("groups", []))
 
-        groups, users = self._process_group_migration_and_users(
+        groups, users = self._migrate_group_and_users(
             groups,
             data["users"],
             has_admin_group,
@@ -351,7 +351,7 @@ class AuthStore:
             perm_lookup,
         )
 
-        self._process_refresh_tokens(data["refresh_tokens"], users, credentials)
+        self._create_refresh_tokens(data["refresh_tokens"], users, credentials)
 
         self._groups = groups
         self._users = users
@@ -418,7 +418,7 @@ class AuthStore:
             group_without_policy,
         )
 
-    def _process_group_migration_and_users(
+    def _migrate_group_and_users(
         self,
         groups: dict[str, models.Group],
         user_data: list[dict[str, Any]],
@@ -481,7 +481,7 @@ class AuthStore:
 
         return groups, users
 
-    def _process_refresh_tokens(
+    def _create_refresh_tokens(
         self,
         refresh_token_data: list[dict[str, Any]],
         users: dict[str, models.User],

@@ -1421,12 +1421,12 @@ class AlexaModeController(AlexaCapability):
             raise UnsupportedProperty(name)
 
         domain_method_map = {
-            fan.DOMAIN: self._get_fan,
-            humidifier.DOMAIN: self._get_humidifier,
+            fan.DOMAIN: self._get_fan_mode,
+            humidifier.DOMAIN: self._get_humidifier_mode,
             remote.DOMAIN: self._get_remote_activity,
-            water_heater.DOMAIN: self._get_water_heater,
-            cover.DOMAIN: self._get_cover,
-            valve.DOMAIN: self._get_valve,
+            water_heater.DOMAIN: self._get_water_heater_mode,
+            cover.DOMAIN: self._get_cover_state,
+            valve.DOMAIN: self._get_valve_state,
         }
 
         # Splitting the self.instance into two parts, domain name and the attribute
@@ -1435,13 +1435,13 @@ class AlexaModeController(AlexaCapability):
             return domain_method_map[domain](attr)
         return None
 
-    def _get_fan(self, attr: str) -> Any:
+    def _get_fan_mode(self, attr: str) -> Any:
         if attr == fan.ATTR_DIRECTION:
             return self._get_mode_or_state(attr, [fan.DIRECTION_FORWARD, fan.DIRECTION_REVERSE, STATE_UNKNOWN])
         if attr == fan.ATTR_PRESET_MODE:
             return self._get_mode_or_state(attr, self.entity.attributes.get(fan.ATTR_PRESET_MODES, []))
 
-    def _get_valve(self, attr: str) -> Any:
+    def _get_valve_state(self, attr: str) -> Any:
         return self._get_mode_or_state(attr, [
                 valve.STATE_OPEN,
                 valve.STATE_OPENING,
@@ -1449,7 +1449,7 @@ class AlexaModeController(AlexaCapability):
                 valve.STATE_CLOSING,
                 STATE_UNKNOWN,], use_state=True)
 
-    def _get_cover(self, attr: str) -> Any:
+    def _get_cover_state(self, attr: str) -> Any:
         return self._get_mode_or_state(attr, [
                 cover.STATE_OPEN,
                 cover.STATE_OPENING,
@@ -1457,10 +1457,10 @@ class AlexaModeController(AlexaCapability):
                 cover.STATE_CLOSING,
                 STATE_UNKNOWN,], use_state=True)
 
-    def _get_water_heater(self, attr: str) -> Any:
+    def _get_water_heater_mode(self, attr: str) -> Any:
         return self._get_mode_or_state(attr,  self.entity.attributes.get(water_heater.ATTR_OPERATION_LIST) or [])
 
-    def _get_humidifier(self, attr: str) -> Any:
+    def _get_humidifier_mode(self, attr: str) -> Any:
         return self._get_mode_or_state(attr, self.entity.attributes.get(humidifier.ATTR_AVAILABLE_MODES) or [])
 
     def _get_remote_activity(self, attr: str) -> Any:
