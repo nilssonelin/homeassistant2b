@@ -87,6 +87,7 @@ DIRECTIVE_NOT_SUPPORTED = "Entity does not support directive"
 ALEXA_THERMOSTAT_NAMESPACE = "Alexa.ThermostatController"
 ALEXA_SECURITY_PANEL_NAMESPACE = "Alexa.SecurityPanelController"
 ALEXA_MODE_NAMESPACE = "Alexa.ModeController"
+ALEXA_RANGE_NAMESPACE = "Alexa.RangeController"
 
 
 MIN_MAX_TEMP = {
@@ -1402,8 +1403,159 @@ async def async_api_toggle_off(
     return response
 
 
-@HANDLERS.register(("Alexa.RangeController", "SetRangeValue"))
+@HANDLERS.register((ALEXA_RANGE_NAMESPACE, "SetRangeValue"))
 async def async_api_set_range(
+    hass: ha.HomeAssistant,
+    config: AbstractConfig,
+    directive: AlexaDirective,
+    context: ha.Context,
+) -> AlexaResponse:
+    """Process a SetRangeValue request."""
+    entity = directive.entity
+    instance = directive.instance
+    domain = entity.domain
+    service = None
+    data: dict[str, Any] = {ATTR_ENTITY_ID: entity.entity_id}
+    range_value = directive.payload["rangeValue"]
+    supported = entity.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
+
+    service = determine_service_set_range(
+        instance, entity, supported, range_value, data
+    )
+
+    if not instance:
+        raise AlexaInvalidDirectiveError(DIRECTIVE_NOT_SUPPORTED)
+    await hass.services.async_call(
+        domain, service, data, blocking=False, context=context
+    )
+
+    response = directive.response()
+    response.add_context_property(
+        {
+            "namespace": "Alexa.RangeController",
+            "instance": instance,
+            "name": "rangeValue",
+            "value": range_value,
+        }
+    )
+
+    return response
+
+
+def determine_service_set_range(
+    instance: str | None,
+    entity: ha.State,
+    supported: int,
+    range_value: int,
+    data: dict[str, Any],
+) -> str:
+    """Determine the instance to call based on the entity and supported features."""
+
+    instance_handlers = {
+        f"{cover.DOMAIN}.{cover.ATTR_POSITION}": range_value_handle_cover_position,
+        f"{cover.DOMAIN}.tilt": range_value_handle_cover_tilt,
+        f"{fan.DOMAIN}.{fan.ATTR_PERCENTAGE}": range_value_handle_fan_speed,
+        f"{humidifier.DOMAIN}.{humidifier.ATTR_HUMIDITY}": range_value_handle_humidifier_humidity,
+        f"{input_number.DOMAIN}.{input_number.ATTR_VALUE}": range_value_handle_input_number_value,
+        f"{number.DOMAIN}.{number.ATTR_VALUE}": range_value_handle_input_number_value,
+        f"{vacuum.DOMAIN}.{vacuum.ATTR_FAN_SPEED}": range_value_handle_vacuum_fan_speed,
+        f"{valve.DOMAIN}.{valve.ATTR_POSITION}": range_value_handle_valve_position,
+    }
+
+    if instance in instance_handlers:
+        return instance_handlers[instance](entity, supported, range_value, data)
+    msg = f"Entity '{entity.entity_id}' does not support instance '{instance}'"
+    raise AlexaInvalidDirectiveError(msg)
+
+
+def range_value_handle_cover_position(
+    entity: ha.State, supported: int, range_value: int, data: dict[str, Any]
+) -> str:
+    """Handle cover position."""
+    range_value = int(range_value)
+    if supported & cover.CoverEntityFeature.CLOSE and range_value == 0:
+        return cover.SERVICE_CLOSE_COVER
+    if supported & cover.CoverEntityFeature.OPEN and range_value == 100:
+        return cover.SERVICE_OPEN_COVER
+    data[cover.ATTR_POSITION] = range_value
+    return cover.SERVICE_SET_COVER_POSITION
+
+
+def range_value_handle_cover_tilt(
+    entity: ha.State, supported: int, range_value: int, data: dict[str, Any]
+) -> str:
+    """Handle cover tilt."""
+    range_value = int(range_value)
+    if supported & cover.CoverEntityFeature.CLOSE_TILT and range_value == 0:
+        return cover.SERVICE_CLOSE_COVER_TILT
+    if supported & cover.CoverEntityFeature.OPEN_TILT and range_value == 100:
+        return cover.SERVICE_OPEN_COVER_TILT
+    data[cover.ATTR_TILT_POSITION] = range_value
+    return cover.SERVICE_SET_COVER_TILT_POSITION
+
+
+def range_value_handle_fan_speed(
+    entity: ha.State, supported: int, range_value: int, data: dict[str, Any]
+) -> str:
+    """Handle fan speed."""
+    range_value = int(range_value)
+    if range_value == 0:
+        return fan.SERVICE_TURN_OFF
+    if supported & fan.FanEntityFeature.SET_SPEED:
+        data[fan.ATTR_PERCENTAGE] = range_value
+        return fan.SERVICE_SET_PERCENTAGE
+    return fan.SERVICE_TURN_ON
+
+
+def range_value_handle_humidifier_humidity(
+    entity: ha.State, supported: int, range_value: int, data: dict[str, Any]
+) -> str:
+    """Handle humidifier target humidity."""
+    range_value = int(range_value)
+    data[humidifier.ATTR_HUMIDITY] = range_value
+    return humidifier.SERVICE_SET_HUMIDITY
+
+
+def range_value_handle_input_number_value(
+    entity: ha.State, supported: int, range_value: float, data: dict[str, Any]
+) -> str:
+    """Handle input number value."""
+    range_value = float(range_value)
+    min_value = float(entity.attributes[input_number.ATTR_MIN])
+    max_value = float(entity.attributes[input_number.ATTR_MAX])
+    data[input_number.ATTR_VALUE] = min(max_value, max(min_value, range_value))
+    return input_number.SERVICE_SET_VALUE
+
+
+def range_value_handle_vacuum_fan_speed(
+    entity: ha.State, supported: int, range_value: int, data: dict[str, Any]
+) -> str:
+    """Handle vacuum fan speed."""
+    range_value = int(range_value)
+    speed_list = entity.attributes[vacuum.ATTR_FAN_SPEED_LIST]
+    speed = next((v for i, v in enumerate(speed_list) if i == range_value), None)
+    if not speed:
+        msg = "Entity does not support value"
+        raise AlexaInvalidValueError(msg)
+    data[vacuum.ATTR_FAN_SPEED] = speed
+    return vacuum.SERVICE_SET_FAN_SPEED
+
+
+def range_value_handle_valve_position(
+    entity: ha.State, supported: int, range_value: int, data: dict[str, Any]
+) -> str:
+    """Handle valve position."""
+    range_value = int(range_value)
+    if supported & valve.ValveEntityFeature.CLOSE and range_value == 0:
+        return valve.SERVICE_CLOSE_VALVE
+    if supported & valve.ValveEntityFeature.OPEN and range_value == 100:
+        return valve.SERVICE_OPEN_VALVE
+    data[valve.ATTR_POSITION] = range_value
+    return valve.SERVICE_SET_VALVE_POSITION
+
+
+@HANDLERS.register(("Alexa.RangeController", "SetRangeValue"))
+async def async_api_set_range_old(
     hass: ha.HomeAssistant,
     config: AbstractConfig,
     directive: AlexaDirective,
