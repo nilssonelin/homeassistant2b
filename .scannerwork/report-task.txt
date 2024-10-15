@@ -1,6 +1,0 @@
-projectKey=buienradar
-serverUrl=http://localhost:9000
-serverVersion=10.6.0.92116
-dashboardUrl=http://localhost:9000/dashboard?id=buienradar
-ceTaskId=83db59b3-58fc-4c2a-bd48-3c2c23c4c705
-ceTaskUrl=http://localhost:9000/api/ce/task?id=83db59b3-58fc-4c2a-bd48-3c2c23c4c705

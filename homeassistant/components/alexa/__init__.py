@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import voluptuous as vol
@@ -34,7 +33,6 @@ from .const import (
     DOMAIN,
 )
 
-_LOGGER = logging.getLogger(__name__)
 CONF_FLASH_BRIEFINGS = "flash_briefings"
 CONF_SMART_HOME = "smart_home"
 DEFAULT_LOCALE = "en-US"
@@ -112,10 +110,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if CONF_SMART_HOME in config:
         smart_home_config: dict[str, Any] | None = config[CONF_SMART_HOME]
         smart_home_config = smart_home_config or SMART_HOME_SCHEMA({})
-        try:
-            await smart_home.async_setup(hass, smart_home_config)
-        except Exception as e:
-            _LOGGER.error(e)
-            return False
+        await smart_home.async_setup(hass, smart_home_config)
 
     return True

@@ -9,7 +9,6 @@ from collections.abc import AsyncGenerator, AsyncIterable, Callable
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 import logging
-import math
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
@@ -1213,9 +1212,7 @@ class PipelineRun:
         """Apply volume transformation only (no VAD/audio enhancements) with optional chunking."""
         timestamp_ms = 0
         async for chunk in audio_stream:
-            if not math.isclose(
-                self.audio_settings.volume_multiplier, 1.0, rel_tol=1e-09, abs_tol=1e-09
-            ):
+            if self.audio_settings.volume_multiplier != 1.0:
                 chunk = _multiply_volume(chunk, self.audio_settings.volume_multiplier)
 
             for sub_chunk in chunk_samples(
@@ -1236,9 +1233,7 @@ class PipelineRun:
 
         timestamp_ms = 0
         async for dirty_samples in audio_stream:
-            if not math.isclose(
-                self.audio_settings.volume_multiplier, 1.0, rel_tol=1e-09, abs_tol=1e-09
-            ):
+            if self.audio_settings.volume_multiplier != 1.0:
                 # Static gain
                 dirty_samples = _multiply_volume(
                     dirty_samples, self.audio_settings.volume_multiplier
