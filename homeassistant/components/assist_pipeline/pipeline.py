@@ -690,37 +690,17 @@ class PipelineRun:
         # Remove language since it doesn't apply to wake words yet
         metadata_dict.pop("language", None)
 
-        self.process_event(
-            PipelineEvent(
-                PipelineEventType.WAKE_WORD_START,
-                {
-                    "entity_id": self.wake_word_entity_id,
-                    "metadata": metadata_dict,
-                    "timeout": wake_word_settings.timeout or 0,
-                },
-            )
+        self._process_wake_word_start_event(metadata_dict, wake_word_settings)
+
+        wake_word_vad: VoiceActivityTimeout | None = self._setup_voice_activity_timeout(
+            wake_word_settings
         )
-
-        if self.debug_recording_queue is not None:
-            self.debug_recording_queue.put_nowait(f"00_wake-{self.wake_word_entity_id}")
-
-        wake_word_vad: VoiceActivityTimeout | None = None
-        if (wake_word_settings.timeout is not None) and (
-            wake_word_settings.timeout > 0
-        ):
-            # Use VAD to determine timeout
-            wake_word_vad = VoiceActivityTimeout(wake_word_settings.timeout)
 
         # Audio chunk buffer. This audio will be forwarded to speech-to-text
         # after wake-word-detection.
-        num_audio_chunks_to_buffer = int(
-            (wake_word_settings.audio_seconds_to_buffer * SAMPLE_RATE)
-            / SAMPLES_PER_CHUNK
+        stt_audio_buffer: deque[EnhancedAudioChunk] | None = self._setup_audio_buffer(
+            wake_word_settings
         )
-
-        stt_audio_buffer: deque[EnhancedAudioChunk] | None = None
-        if num_audio_chunks_to_buffer > 0:
-            stt_audio_buffer = deque(maxlen=num_audio_chunks_to_buffer)
 
         try:
             # Detect wake word(s)
@@ -775,7 +755,7 @@ class PipelineRun:
             if result.queued_audio:
                 # Add audio that was pending at detection.
                 #
-                # Because detection occurs *after* the wake word was actually
+                # Because detection occurs after the wake word was actually
                 # spoken, we need to make sure pending audio is forwarded to
                 # speech-to-text so the user does not have to pause before
                 # speaking the voice command.
@@ -799,6 +779,40 @@ class PipelineRun:
         )
 
         return result
+
+    def _setup_voice_activity_timeout(
+        self, wake_word_settings
+    ) -> VoiceActivityTimeout | None:
+        if wake_word_settings.timeout is not None and wake_word_settings.timeout > 0:
+            return VoiceActivityTimeout(wake_word_settings.timeout)
+        return None
+
+    def _setup_audio_buffer(
+        self, wake_word_settings
+    ) -> deque[EnhancedAudioChunk] | None:
+        num_audio_chunks_to_buffer = int(
+            (wake_word_settings.audio_seconds_to_buffer * SAMPLE_RATE)
+            / SAMPLES_PER_CHUNK
+        )
+        return (
+            deque(maxlen=num_audio_chunks_to_buffer)
+            if num_audio_chunks_to_buffer > 0
+            else None
+        )
+
+    def _process_wake_word_start_event(self, metadata_dict, wake_word_settings) -> None:
+        self.process_event(
+            PipelineEvent(
+                PipelineEventType.WAKE_WORD_START,
+                {
+                    "entity_id": self.wake_word_entity_id,
+                    "metadata": metadata_dict,
+                    "timeout": wake_word_settings.timeout or 0,
+                },
+            )
+        )
+        if self.debug_recording_queue is not None:
+            self.debug_recording_queue.put_nowait(f"00_wake-{self.wake_word_entity_id}")
 
     async def _wake_word_audio_stream(
         self,
