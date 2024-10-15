@@ -1889,7 +1889,7 @@ class AlexaRangeController(AlexaCapability):
         )
 
     # Humidifier target humidity resources
-    def _get_humidifier_resource(self, attr) -> dict[str, list[dict[str, Any]]]:
+    def _get_humidifier_resource(self, attr) -> AlexaPresetResource:
         return AlexaPresetResource(
             labels=["Humidity", "Percentage", "Target humidity"],
             min_value=self.entity.attributes.get(humidifier.ATTR_MIN_HUMIDITY, 10),
@@ -1899,7 +1899,7 @@ class AlexaRangeController(AlexaCapability):
         )
 
     # Input number value
-    def _get_input_number_resource(self, attr) -> dict[str, list[dict[str, Any]]]:
+    def _get_input_number_resource(self, attr) -> AlexaPresetResource:
         min_value = float(self.entity.attributes[input_number.ATTR_MIN])
         max_value = float(self.entity.attributes[input_number.ATTR_MAX])
         precision = float(self.entity.attributes.get(input_number.ATTR_STEP, 1))
@@ -1921,7 +1921,7 @@ class AlexaRangeController(AlexaCapability):
         return return_resource
 
     # Number value
-    def _get_number_resource(self, attr) -> dict[str, list[dict[str, Any]]]:
+    def _get_number_resource(self, attr) -> AlexaPresetResource:
         min_value = float(self.entity.attributes[number.ATTR_MIN])
         max_value = float(self.entity.attributes[number.ATTR_MAX])
         precision = float(self.entity.attributes.get(number.ATTR_STEP, 1))
@@ -1943,7 +1943,7 @@ class AlexaRangeController(AlexaCapability):
         return return_resource
 
     # Vacuum Fan Speed
-    def _get_vacuum_resource(self, attr) -> dict[str, list[dict[str, Any]]]:
+    def _get_vacuum_resource(self, attr) -> AlexaPresetResource:
         speed_list = self.entity.attributes[vacuum.ATTR_FAN_SPEED_LIST]
         max_value = len(speed_list) - 1
         return_resource = AlexaPresetResource(
@@ -1963,7 +1963,7 @@ class AlexaRangeController(AlexaCapability):
         return return_resource
 
     # Valve Position resources
-    def _get_valve_resource(self, attr) -> dict[str, list[dict[str, Any]]]:
+    def _get_valve_resource(self, attr) -> AlexaPresetResource:
         return AlexaPresetResource(
             ["Opening", AlexaGlobalCatalog.SETTING_OPENING],
             min_value=0,
