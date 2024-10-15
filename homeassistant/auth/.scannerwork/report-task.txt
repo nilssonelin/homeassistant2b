@@ -1,0 +1,6 @@
+projectKey=TestingCommandLine_v2
+serverUrl=http://localhost:9000
+serverVersion=10.6.0.92116
+dashboardUrl=http://localhost:9000/dashboard?id=TestingCommandLine_v2
+ceTaskId=18ff194c-cb5e-451a-8cea-fd98adc3d9ae
+ceTaskUrl=http://localhost:9000/api/ce/task?id=18ff194c-cb5e-451a-8cea-fd98adc3d9ae
