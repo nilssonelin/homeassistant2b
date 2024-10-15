@@ -1887,7 +1887,6 @@ class AlexaRangeController(AlexaCapability):
             precision=1 if percentage_step else 100,
             unit=AlexaGlobalCatalog.UNIT_PERCENT,
         )
-        # return self._resource.serialize_capability_resources()
 
     # Humidifier target humidity resources
     def _get_humidifier_resource(self, attr) -> dict[str, list[dict[str, Any]]]:
