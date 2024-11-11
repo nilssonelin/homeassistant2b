@@ -138,7 +138,7 @@ jobs:
           sed -i "/uv/d" requirements_diff.txt
 
       - name: Build wheels
-        uses: home-assistant/wheels@2024.07.1
+        uses: home-assistant/wheels@2024.11.0
         with:
           abi: ${{ matrix.abi }}
           tag: musllinux_1_2
@@ -213,7 +213,7 @@ jobs:
           cat homeassistant/package_constraints.txt | grep 'pydantic==' >> requirements_old-cython.txt
 
       - name: Build wheels (old cython)
-        uses: home-assistant/wheels@2024.07.1
+        uses: home-assistant/wheels@2024.11.0
         with:
           abi: ${{ matrix.abi }}
           tag: musllinux_1_2
@@ -228,7 +228,7 @@ jobs:
           pip: "'cython<3'"
 
       - name: Build wheels (part 1)
-        uses: home-assistant/wheels@2024.07.1
+        uses: home-assistant/wheels@2024.11.0
         with:
           abi: ${{ matrix.abi }}
           tag: musllinux_1_2
@@ -242,7 +242,7 @@ jobs:
           requirements: "requirements_all.txtaa"
 
       - name: Build wheels (part 2)
-        uses: home-assistant/wheels@2024.07.1
+        uses: home-assistant/wheels@2024.11.0
         with:
           abi: ${{ matrix.abi }}
           tag: musllinux_1_2
@@ -256,7 +256,7 @@ jobs:
           requirements: "requirements_all.txtab"
 
       - name: Build wheels (part 3)
-        uses: home-assistant/wheels@2024.07.1
+        uses: home-assistant/wheels@2024.11.0
         with:
           abi: ${{ matrix.abi }}
           tag: musllinux_1_2
