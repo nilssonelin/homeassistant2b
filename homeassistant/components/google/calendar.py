@@ -262,7 +262,9 @@ class GoogleCalendarEntity(
         self._attr_entity_registry_enabled_default = entity_enabled
         if supports_write:
             self._attr_supported_features = (
-                CalendarEntityFeature.CREATE_EVENT | CalendarEntityFeature.DELETE_EVENT
+                CalendarEntityFeature.CREATE_EVENT
+                | CalendarEntityFeature.DELETE_EVENT
+                | CalendarEntityFeature.UPDATE_EVENT
             )
 
     @property
@@ -370,6 +372,52 @@ class GoogleCalendarEntity(
         except ApiException as err:
             raise HomeAssistantError(f"Error while creating event: {err!s}") from err
         await self.coordinator.async_refresh()
+
+    async def async_update_event(
+        self,
+        uid: str,
+        event: dict[str, Any],
+        recurrence_id: str | None = None,
+        recurrence_range: str | None = None,
+    ) -> None:
+        """Update existing event on the Calendar."""
+        try:
+            coordinator = cast(CalendarSyncUpdateCoordinator, self.coordinator)
+            api = coordinator.sync.api
+            google_event = self._parse_patch_event(event, recurrence_id)
+
+            await api.async_patch_event(
+                self.calendar_id, uid.split("@")[0], google_event
+            )
+            # Force a refresh after update
+            await coordinator.async_refresh()
+
+        except ApiException as err:
+            raise HomeAssistantError(f"Error while updating event: {err!s}") from err
+
+    def _parse_patch_event(
+        self, event: dict[str, Any], recurrence_id: str | None
+    ) -> dict[str, Any]:
+        timezone = str(event["dtstart"].tzinfo)
+
+        # Format datetime to RFC3339 specification
+        def format_datetime(dt: Any) -> Any:
+            return dt.isoformat()
+
+        parsed_event = {
+            "summary": event["summary"],
+            "description": event["description"],
+            "start": {
+                "dateTime": format_datetime(event["dtstart"]),
+                "timeZone": timezone,
+            },
+            "end": {"dateTime": format_datetime(event["dtend"]), "timeZone": timezone},
+        }
+
+        if recurrence_id is not None:
+            parsed_event["recurringEventId"] = recurrence_id
+
+        return parsed_event
 
     async def async_delete_event(
         self,
