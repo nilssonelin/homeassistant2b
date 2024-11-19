@@ -42,6 +42,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.json import JsonValueType
 
 from .const import (
+    CALENDAR_TEMPLATE,
     CONF_EVENT,
     DOMAIN,
     DOMAIN_DATA,
@@ -65,6 +66,7 @@ from .const import (
     EVENT_TYPES,
     EVENT_UID,
     LIST_EVENT_FIELDS,
+    TEMPLATE_EVENTS,
     CalendarEntityFeature,
 )
 
@@ -251,6 +253,13 @@ WEBSOCKET_EVENT_SCHEMA = vol.Schema(
     )
 )
 
+WEBSOCKET_TEMPLATE_SCHEMA = vol.Schema(
+    {
+        # This is a dict with key TEMPLATE_EVENTS containin a list of events
+        vol.Required(TEMPLATE_EVENTS): vol.All([WEBSOCKET_EVENT_SCHEMA])
+    }
+)
+
 # Validation for the CalendarEvent dataclass
 CALENDAR_EVENT_SCHEMA = vol.Schema(
     vol.All(
@@ -300,6 +309,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     websocket_api.async_register_command(hass, handle_calendar_event_create)
     websocket_api.async_register_command(hass, handle_calendar_event_delete)
     websocket_api.async_register_command(hass, handle_calendar_event_update)
+    websocket_api.async_register_command(hass, handle_calendar_template_apply)
 
     component.async_register_entity_service(
         CREATE_EVENT_SERVICE,
@@ -722,6 +732,59 @@ async def handle_calendar_event_create(
         connection.send_error(msg["id"], "failed", str(ex))
     else:
         connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "calendar/template/apply",
+        vol.Required("entity_id"): cv.entity_id,  # This is the calendar Id
+        CALENDAR_TEMPLATE: WEBSOCKET_TEMPLATE_SCHEMA,
+    }
+)
+@websocket_api.async_response
+async def handle_calendar_template_apply(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle creation of multiple calendar events from a template."""
+    if not (entity := hass.data[DOMAIN_DATA].get_entity(msg["entity_id"])):
+        connection.send_error(msg["id"], ERR_NOT_FOUND, "Entity not found")
+        return
+
+    if (
+        not entity.supported_features
+        or not entity.supported_features & CalendarEntityFeature.CREATE_EVENT
+    ):
+        connection.send_message(
+            websocket_api.error_message(
+                msg["id"], ERR_NOT_SUPPORTED, "Calendar does not support event creation"
+            )
+        )
+        return
+    # Extract events from the calendar_template key in the message
+    template = msg.get(CALENDAR_TEMPLATE, [])
+    events = template.get(TEMPLATE_EVENTS, [])
+
+    if not events:
+        connection.send_error(
+            msg["id"], "invalid_data", "No events found in the template"
+        )
+        return
+    templateId = "This is the template ID to be replaced"
+
+    results = []
+    for event in events:
+        try:
+            # Add the templateId to the description. TODO: Replace with actual Id and try to fix newlines
+            if "description" in event:
+                event["description"] = f"{event['description']}\n\n\n{templateId}"
+            # Call async_create_event for each event
+            await entity.async_create_event(**event)
+            results.append({"event": event, "status": "success"})
+        except HomeAssistantError as ex:
+            results.append({"event": event, "status": "failed", "error": str(ex)})
+
+    # Send results back to the client
+    connection.send_result(msg["id"], {"results": results})
 
 
 @websocket_api.websocket_command(

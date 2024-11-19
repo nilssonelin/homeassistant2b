@@ -16,7 +16,8 @@ DOMAIN = "calendar"
 DOMAIN_DATA: HassKey[EntityComponent[CalendarEntity]] = HassKey(DOMAIN)
 
 CONF_EVENT = "event"
-
+CALENDAR_TEMPLATE = "calendar_template"
+TEMPLATE_EVENTS = "template_events"
 
 class CalendarEntityFeature(IntFlag):
     """Supported features of the calendar entity."""
