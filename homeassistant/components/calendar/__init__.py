@@ -66,7 +66,11 @@ from .const import (
     EVENT_TYPES,
     EVENT_UID,
     LIST_EVENT_FIELDS,
+    TEMPLATE_CREATION_DATE,
     TEMPLATE_EVENTS,
+    TEMPLATE_ID,
+    TEMPLATE_NAME,
+    TEMPLATE_VIEW_EVENTS,
     CalendarEntityFeature,
 )
 
@@ -255,8 +259,10 @@ WEBSOCKET_EVENT_SCHEMA = vol.Schema(
 
 WEBSOCKET_TEMPLATE_SCHEMA = vol.Schema(
     {
-        # This is a dict with key TEMPLATE_EVENTS containin a list of events
-        vol.Required(TEMPLATE_EVENTS): vol.All([WEBSOCKET_EVENT_SCHEMA])
+        # This is a dict with key TEMPLATE_EVENTS containing a list of events
+        vol.Required(TEMPLATE_EVENTS): vol.All([WEBSOCKET_EVENT_SCHEMA]),
+        vol.Required(TEMPLATE_NAME): cv.string,
+        vol.Required(TEMPLATE_CREATION_DATE): vol.Any(cv.date, cv.datetime),
     }
 )
 
@@ -301,6 +307,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.http.register_view(CalendarListView(component))
     hass.http.register_view(CalendarEventView(component))
+    hass.http.register_view(CalendarTemplateListView(component))
 
     frontend.async_register_built_in_panel(
         hass, "calendar", "calendar", "hass:calendar"
@@ -644,6 +651,7 @@ class CalendarEventView(http.HomeAssistantView):
 
         start = request.query.get("start")
         end = request.query.get("end")
+
         if start is None or end is None:
             return web.Response(status=HTTPStatus.BAD_REQUEST)
         try:
@@ -760,24 +768,28 @@ async def handle_calendar_template_apply(
             )
         )
         return
-    # Extract events from the calendar_template key in the message
-    template = msg.get(CALENDAR_TEMPLATE, [])
-    events = template.get(TEMPLATE_EVENTS, [])
+
+    # Extract information from the calendar_template key in the message
+    template_name = msg[CALENDAR_TEMPLATE][TEMPLATE_NAME]
+    template_creation_date = msg[CALENDAR_TEMPLATE][TEMPLATE_CREATION_DATE]
+    events = msg[CALENDAR_TEMPLATE][TEMPLATE_EVENTS]
 
     if not events:
         connection.send_error(
             msg["id"], "invalid_data", "No events found in the template"
         )
         return
-    templateId = "This is the template ID to be replaced"
+
+    # Add the templateId to the description so that we can see what events belong together since
+    # we do not want to use the db for persistence
+    templateId = f"Template: {template_name} ({template_creation_date})"
 
     results = []
     for event in events:
         try:
-            # Add the templateId to the description. TODO: Replace with actual Id and try to fix newlines
-            if "description" in event:
-                event["description"] = f"{event['description']}\n\n\n{templateId}"
-            # Call async_create_event for each event
+            # Add the templateId to the description.
+            event["description"] = f"{event['description']}\n\n\n{templateId}"
+            # Call async_create_event for each event in the template
             await entity.async_create_event(**event)
             results.append({"event": event, "status": "success"})
         except HomeAssistantError as ex:
@@ -785,6 +797,127 @@ async def handle_calendar_template_apply(
 
     # Send results back to the client
     connection.send_result(msg["id"], {"results": results})
+
+
+class CalendarTemplateListView(http.HomeAssistantView):
+    """View to retrieve calendar template list."""
+
+    url = "/api/calendars/{entity_id}/templates"
+    name = "api:calendars:calendar:templates"
+
+    def __init__(self, component: EntityComponent[CalendarEntity]) -> None:
+        """Initialize calendar template view."""
+        self.component = component
+
+    async def get(self, request: web.Request, entity_id: str) -> web.Response:
+        """Return calendar templates."""
+        if not (entity := self.component.get_entity(entity_id)) or not isinstance(
+            entity, CalendarEntity
+        ):
+            return web.Response(status=HTTPStatus.BAD_REQUEST)
+
+        # Arbitrary start and end dates to fetch a lot of events to get all templates
+        # (that will be created during this project at least)
+        start = "2000-01-01T00:00:00.000Z"
+        end = "2050-12-12T23:00:00.000Z"
+
+        try:
+            start_date = dt_util.parse_datetime(start)
+            end_date = dt_util.parse_datetime(end)
+        except (ValueError, AttributeError):
+            return web.Response(status=HTTPStatus.BAD_REQUEST)
+
+        try:
+            # Get all events for the arbitrary start date to extract templates
+            # from them
+            calendar_event_list = await entity.async_get_events(
+                request.app[http.KEY_HASS],
+                # Ignoring linter here because we now date is not None since they are hard coded
+                dt_util.as_local(start_date),  # type: ignore[arg-type]
+                dt_util.as_local(end_date),  # type: ignore[arg-type]
+            )
+
+        except HomeAssistantError as err:
+            _LOGGER.debug("Error reading events: %s", err)
+            return self.json_message(
+                f"Error reading events: {err}", HTTPStatus.INTERNAL_SERVER_ERROR
+            )
+        templates = self._generate_templates(calendar_event_list)
+
+        return self.json(templates)
+
+    def _generate_templates(
+        self, calendar_event_list: list[CalendarEvent]
+    ) -> list[dict[str, Any]]:
+        """Generate templates from the calendar events."""
+        templates: dict[str, list[dict[str, Any]]] = {}  # {templateId: [events]}
+        highest_weekday_for_template: dict[str, int] = {}
+
+        # Regex pattern for matching the templateId format: "Template: {template_name} ({template_creation_date})"
+        template_id_pattern = re.compile(r"^Template: .+ \(\d{4}-\d{2}-\d{2}\)$")
+
+        for event in calendar_event_list:
+            description = event.description
+            start_date = event.start
+            end_date = event.end
+
+            if not description or start_date is None or end_date is None:
+                continue
+
+            # Extract the templateId from the description (last line)
+            lines = description.split("\n")
+            template_id = lines[-1].strip()
+
+            # Validate that the templateId format is correct.
+            if not template_id_pattern.match(template_id):
+                continue  # Skip the event if the templateId is not the last line or doesn't match the format. I.e. Not valid template
+
+            # Determine the day of the week
+            weekday = start_date.weekday()  # 0, 1 ...
+
+            # Check if we have already encountered a higher weekday for this template
+            if template_id in highest_weekday_for_template:
+                # If the current event's weekday is less than the highest seen, skip it
+                # This should mean that we have already handled that weekday for this template
+                # Since all events per week should be the same.
+                # NOTE: This may miss events from the original template if they have been
+                # removed from the calendar
+                if weekday < highest_weekday_for_template[template_id]:
+                    continue
+
+            if template_id not in templates:
+                templates[template_id] = []
+
+            # Add the event to the correct template
+            templates[template_id].append(
+                {
+                    "description": event.description,
+                    # TOoDO: check if we can assure that start_date is type DateTime, I.e. that it always has a time.
+                    # Potentially this is not the case when event is set to "all day"?
+                    # Ignoring mypy error for now
+                    "start_time": start_date.time().isoformat(),  # type: ignore[union-attr]
+                    "end_time": end_date.time().isoformat(),  # type: ignore[union-attr]
+                    "summary": event.summary,
+                    "weekday_int": weekday,
+                }
+            )
+
+            # Update the highest weekday seen for this template_id
+            highest_weekday_for_template[template_id] = max(
+                highest_weekday_for_template.get(template_id, -1), weekday
+            )
+
+        # Format templates into the required structure
+        result = []
+        for template_id, events in templates.items():
+            result.append(
+                {
+                    TEMPLATE_ID: template_id,
+                    TEMPLATE_VIEW_EVENTS: events,
+                }
+            )
+
+        return result
 
 
 @websocket_api.websocket_command(
