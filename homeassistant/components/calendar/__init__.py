@@ -10,6 +10,7 @@ from itertools import groupby
 import logging
 import re
 from typing import Any, Final, cast, final
+import uuid
 
 from aiohttp import web
 from dateutil.rrule import rrulestr
@@ -66,7 +67,6 @@ from .const import (
     EVENT_TYPES,
     EVENT_UID,
     LIST_EVENT_FIELDS,
-    TEMPLATE_CREATION_DATE,
     TEMPLATE_EVENTS,
     TEMPLATE_ID,
     TEMPLATE_NAME,
@@ -262,7 +262,6 @@ WEBSOCKET_TEMPLATE_SCHEMA = vol.Schema(
         # This is a dict with key TEMPLATE_EVENTS containing a list of events
         vol.Required(TEMPLATE_EVENTS): vol.All([WEBSOCKET_EVENT_SCHEMA]),
         vol.Required(TEMPLATE_NAME): cv.string,
-        vol.Required(TEMPLATE_CREATION_DATE): vol.Any(cv.date, cv.datetime),
     }
 )
 
@@ -771,7 +770,6 @@ async def handle_calendar_template_apply(
 
     # Extract information from the calendar_template key in the message
     template_name = msg[CALENDAR_TEMPLATE][TEMPLATE_NAME]
-    template_creation_date = msg[CALENDAR_TEMPLATE][TEMPLATE_CREATION_DATE]
     events = msg[CALENDAR_TEMPLATE][TEMPLATE_EVENTS]
 
     if not events:
@@ -780,9 +778,10 @@ async def handle_calendar_template_apply(
         )
         return
 
+    unique_id = uuid.uuid4()
     # Add the templateId to the description so that we can see what events belong together since
     # we do not want to use the db for persistence
-    templateId = f"Template: {template_name} ({template_creation_date})"
+    templateId = f"Template: {template_name} ({unique_id})"
 
     results = []
     for event in events:
@@ -811,15 +810,20 @@ class CalendarTemplateListView(http.HomeAssistantView):
 
     async def get(self, request: web.Request, entity_id: str) -> web.Response:
         """Return calendar templates."""
+
         if not (entity := self.component.get_entity(entity_id)) or not isinstance(
             entity, CalendarEntity
         ):
             return web.Response(status=HTTPStatus.BAD_REQUEST)
 
+        # Cheating to remove calendar with many events to not slow down perf.
+        if entity_id == "calendar.felix_e_bokio_se":
+            return self.json([])
+
         # Arbitrary start and end dates to fetch a lot of events to get all templates
         # (that will be created during this project at least)
-        start = "2000-01-01T00:00:00.000Z"
-        end = "2050-12-12T23:00:00.000Z"
+        start = "2024-01-01T00:00:00.000Z"
+        end = "2026-12-12T23:00:00.000Z"
 
         try:
             start_date = dt_util.parse_datetime(start)
@@ -853,9 +857,6 @@ class CalendarTemplateListView(http.HomeAssistantView):
         templates: dict[str, list[dict[str, Any]]] = {}  # {templateId: [events]}
         highest_weekday_for_template: dict[str, int] = {}
 
-        # Regex pattern for matching the templateId format: "Template: {template_name} ({template_creation_date})"
-        template_id_pattern = re.compile(r"^Template: .+ \(\d{4}-\d{2}-\d{2}\)$")
-
         for event in calendar_event_list:
             description = event.description
             start_date = event.start
@@ -866,35 +867,40 @@ class CalendarTemplateListView(http.HomeAssistantView):
 
             # Extract the templateId from the description (last line)
             lines = description.split("\n")
-            template_id = lines[-1].strip()
+            full_template_id = lines[-1].strip()
 
-            # Validate that the templateId format is correct.
-            if not template_id_pattern.match(template_id):
-                continue  # Skip the event if the templateId is not the last line or doesn't match the format. I.e. Not valid template
+            # Validate that the templateId format includes a UUID
+            # Example format: "Template: ExampleTemplate (550e8400-e29b-41d4-a716-446655440000)"
+            if (
+                not full_template_id.startswith("Template:")
+                or "(" not in full_template_id
+                or ")" not in full_template_id
+            ):
+                continue
+
+            # Extract the UUID part of the templateId
+            try:
+                template_name = full_template_id.split(":")[1].split("(")[0].strip()
+                uuid_part = full_template_id.split("(")[-1].rstrip(")")
+                unique_id = str(uuid.UUID(uuid_part))  # Ensure it's a valid UUID
+            except ValueError:
+                continue  # Skip invalid UUID-based templateIds
 
             # Determine the day of the week
-            weekday = start_date.weekday()  # 0, 1 ...
+            weekday = start_date.weekday()  # 0 (Monday), 1 (Tuesday), ...
 
             # Check if we have already encountered a higher weekday for this template
-            if template_id in highest_weekday_for_template:
-                # If the current event's weekday is less than the highest seen, skip it
-                # This should mean that we have already handled that weekday for this template
-                # Since all events per week should be the same.
-                # NOTE: This may miss events from the original template if they have been
-                # removed from the calendar
-                if weekday < highest_weekday_for_template[template_id]:
+            if unique_id in highest_weekday_for_template:
+                if weekday < highest_weekday_for_template[unique_id]:
                     continue
 
-            if template_id not in templates:
-                templates[template_id] = []
+            if unique_id not in templates:
+                templates[unique_id] = []
 
             # Add the event to the correct template
-            templates[template_id].append(
+            templates[unique_id].append(
                 {
                     "description": event.description,
-                    # TOoDO: check if we can assure that start_date is type DateTime, I.e. that it always has a time.
-                    # Potentially this is not the case when event is set to "all day"?
-                    # Ignoring mypy error for now
                     "start_time": start_date.time().isoformat(),  # type: ignore[union-attr]
                     "end_time": end_date.time().isoformat(),  # type: ignore[union-attr]
                     "summary": event.summary,
@@ -903,16 +909,17 @@ class CalendarTemplateListView(http.HomeAssistantView):
             )
 
             # Update the highest weekday seen for this template_id
-            highest_weekday_for_template[template_id] = max(
-                highest_weekday_for_template.get(template_id, -1), weekday
+            highest_weekday_for_template[unique_id] = max(
+                highest_weekday_for_template.get(unique_id, -1), weekday
             )
 
         # Format templates into the required structure
         result = []
-        for template_id, events in templates.items():
+        for unique_id, events in templates.items():
             result.append(
                 {
-                    TEMPLATE_ID: template_id,
+                    TEMPLATE_ID: unique_id,  # Only the UUID is used here
+                    TEMPLATE_NAME: template_name,
                     TEMPLATE_VIEW_EVENTS: events,
                 }
             )

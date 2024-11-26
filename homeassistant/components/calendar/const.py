@@ -19,7 +19,6 @@ CONF_EVENT = "event"
 CALENDAR_TEMPLATE = "calendar_template"
 TEMPLATE_EVENTS = "template_events"
 TEMPLATE_NAME = "template_name"
-TEMPLATE_CREATION_DATE = "template_creation_date"
 TEMPLATE_ID = "template_id"
 TEMPLATE_VIEW_EVENTS = "template_view_events"
 
