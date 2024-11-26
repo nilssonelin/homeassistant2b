@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timedelta
 import logging
 from typing import Any, cast
 
 from gcal_sync.api import Range, SyncEventsRequest
 from gcal_sync.exceptions import ApiException
-from gcal_sync.model import AccessRole, DateOrDatetime, Event
+from gcal_sync.model import AccessRole, Attendee, DateOrDatetime, Event
 from gcal_sync.store import ScopedCalendarStore
 from gcal_sync.sync import CalendarEventSyncManager
 
@@ -59,6 +60,7 @@ from .const import (
     EVENT_IN_WEEKS,
     EVENT_START_DATE,
     EVENT_START_DATETIME,
+    RESP_DICT,
     FeatureAccess,
 )
 from .coordinator import CalendarQueryUpdateCoordinator, CalendarSyncUpdateCoordinator
@@ -360,6 +362,7 @@ class GoogleCalendarEntity(
                 EVENT_DESCRIPTION: kwargs.get(EVENT_DESCRIPTION),
             }
         )
+        event.attendees = kwargs.get("attendees", [])
         if location := kwargs.get(EVENT_LOCATION):
             event.location = location
         if rrule := kwargs.get(EVENT_RRULE):
@@ -412,8 +415,16 @@ class GoogleCalendarEntity(
                 "timeZone": timezone,
             },
             "end": {"dateTime": format_datetime(event["dtend"]), "timeZone": timezone},
+            "attendees": [
+                {
+                    "id": attendee.get("id"),
+                    "email": attendee.get("email"),
+                    "optional": attendee.get("optional", False),
+                    "comment": attendee.get("comment"),
+                }
+                for attendee in event["attendees"]
+            ],
         }
-
         if recurrence_id is not None:
             parsed_event["recurringEventId"] = recurrence_id
 
@@ -449,7 +460,7 @@ def _get_calendar_event(event: Event) -> CalendarEvent:
         and raw_rule.startswith(RRULE_PREFIX)
     ):
         rrule = raw_rule.removeprefix(RRULE_PREFIX)
-    return CalendarEvent(
+    return GoogleCalendarEvent(
         uid=event.ical_uuid,
         recurrence_id=event.id if event.recurring_event_id else None,
         rrule=rrule,
@@ -458,6 +469,17 @@ def _get_calendar_event(event: Event) -> CalendarEvent:
         end=event.end.value,
         description=event.description,
         location=event.location,
+        attendees=[
+            SerializableAttendee(
+                id=attendee.id,
+                email=attendee.email,
+                displayName=attendee.display_name,
+                optional=attendee.optional,
+                comment=attendee.comment,
+                responseStatus=attendee.response_status,
+            ).to_dict()
+            for attendee in event.attendees
+        ],
     )
 
 
@@ -504,6 +526,7 @@ async def async_create_event(entity: GoogleCalendarEntity, call: ServiceCall) ->
         description=call.data[EVENT_DESCRIPTION],
         start=start,
         end=end,
+        attendees=call.data.get("attendees", []),
     )
     if location := call.data.get(EVENT_LOCATION):
         event.location = location
@@ -517,3 +540,28 @@ async def async_create_event(entity: GoogleCalendarEntity, call: ServiceCall) ->
     except ApiException as err:
         raise HomeAssistantError(str(err)) from err
     entity.async_write_ha_state()
+
+
+@dataclasses.dataclass
+class GoogleCalendarEvent(CalendarEvent):
+    """An event on a calendar."""
+
+    attendees: list[dict[Any, Any]] | None = None
+    html_link: str | None = None
+
+
+class SerializableAttendee(Attendee):
+    """Class for serializing attendees."""
+
+    def to_dict(self) -> dict:
+        """Return a dictionary of the object."""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "display_name": self.display_name,
+            "optional": self.optional,
+            "comment": self.comment,
+            "response_status": RESP_DICT.get(self.response_status.value)
+            if self.response_status
+            else None,
+        }

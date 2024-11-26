@@ -51,3 +51,9 @@ EVENT_START_DATE = "start_date"
 EVENT_START_DATETIME = "start_date_time"
 EVENT_SUMMARY = "summary"
 EVENT_TYPES_CONF = "event_types"
+RESP_DICT = {
+    "needsAction": "",
+    "declined": "Declined",
+    "tentative": "Maybe",
+    "accepted": "Accepted",
+}

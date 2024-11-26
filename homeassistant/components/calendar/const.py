@@ -26,6 +26,7 @@ class CalendarEntityFeature(IntFlag):
     UPDATE_EVENT = 4
 
 
+EVENT_ATTENDEES = "attendees"
 # rfc5545 fields
 EVENT_UID = "uid"
 EVENT_START = "dtstart"
