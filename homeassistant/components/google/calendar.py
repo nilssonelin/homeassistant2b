@@ -445,6 +445,7 @@ class GoogleCalendarEntity(
                 "dateTime": format_datetime(event["dtend"]),
                 "timeZone": timezone,
             },
+            "location": event["location"],
             "attendees": [
                 {
                     "id": attendee.get("id"),
