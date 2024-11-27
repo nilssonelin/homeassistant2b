@@ -384,11 +384,34 @@ class GoogleCalendarEntity(
         try:
             coordinator = cast(CalendarSyncUpdateCoordinator, self.coordinator)
             api = coordinator.sync.api
-            google_event = self._parse_patch_event(event, recurrence_id)
 
-            await api.async_patch_event(
-                self.calendar_id, uid.split("@")[0], google_event
-            )
+            if recurrence_id and recurrence_range == Range.THIS_AND_FUTURE:
+                # Update this and all future events. They share id and thus need no special handling.
+                updated_event = self._parse_patch_event(
+                    event, recurrence_id, recurrence_range
+                )
+                await api.async_patch_event(
+                    self.calendar_id, uid.split("@")[0], updated_event
+                )
+            elif recurrence_id:
+                # Update a single occurrence of a recurring event
+                updated_event = self._parse_patch_event(
+                    event, recurrence_id, recurrence_range
+                )
+
+                # Explicitly set the ID to modify the single instance
+                event_id = recurrence_id
+
+                await api.async_patch_event(self.calendar_id, event_id, updated_event)
+            else:
+                # Single event update.
+                updated_event = self._parse_patch_event(
+                    event, recurrence_id, recurrence_range
+                )
+                await api.async_patch_event(
+                    self.calendar_id, uid.split("@")[0], updated_event
+                )
+
             # Force a refresh after update
             await coordinator.async_refresh()
 
@@ -396,28 +419,45 @@ class GoogleCalendarEntity(
             raise HomeAssistantError(f"Error while updating event: {err!s}") from err
 
     def _parse_patch_event(
-        self, event: dict[str, Any], recurrence_id: str | None
+        self,
+        event: dict[str, Any],
+        recurrence_id: str | None,
+        recurrence_range: str | None,
     ) -> dict[str, Any]:
         timezone = str(event["dtstart"].tzinfo)
 
         # Format datetime to RFC3339 specification
-        def format_datetime(dt: Any) -> Any:
+        def format_datetime(dt: datetime) -> str:
             return dt.isoformat()
 
-        parsed_event = {
+        # Create the updated event object with formatted values
+        updated_event = {
             "summary": event["summary"],
             "description": event["description"],
             "start": {
                 "dateTime": format_datetime(event["dtstart"]),
                 "timeZone": timezone,
             },
-            "end": {"dateTime": format_datetime(event["dtend"]), "timeZone": timezone},
+            "end": {
+                "dateTime": format_datetime(event["dtend"]),
+                "timeZone": timezone,
+            },
         }
 
-        if recurrence_id is not None:
-            parsed_event["recurringEventId"] = recurrence_id
+        # If editing a single instance of a recurring event, add the necessary fields
+        if recurrence_id and recurrence_range == Range.NONE:
+            updated_event["id"] = recurrence_id
+            updated_event["recurringEventId"] = recurrence_id.split("_")[0]
+            updated_event["originalStartTime"] = {
+                "dateTime": format_datetime(event["dtstart"]),
+                "timeZone": timezone,
+            }
 
-        return parsed_event
+            # Add recurrence to not break the chain.
+            if "recurrence" in event:
+                updated_event["recurrence"] = event["recurrence"]
+
+        return updated_event
 
     async def async_delete_event(
         self,
