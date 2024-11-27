@@ -797,14 +797,14 @@ async def handle_calendar_template_apply(
                 lines[:-1]
             )  # Join all lines except the last one
 
-            try:
-                # Add the templateId to the description
-                event["description"] = f"{event['description']}\n\n\n{templateId}"
-                # Call async_create_event for each event in the template
-                await entity.async_create_event(**event)
-                results.append({"event": event, "status": "success"})
-            except HomeAssistantError as ex:
-                results.append({"event": event, "status": "failed", "error": str(ex)})
+        try:
+            # Add the templateId to the description
+            event["description"] = f"{event['description']}\n\n\n{templateId}"
+            # Call async_create_event for each event in the template
+            await entity.async_create_event(**event)
+            results.append({"event": event, "status": "success"})
+        except HomeAssistantError as ex:
+            results.append({"event": event, "status": "failed", "error": str(ex)})
 
     # Send results back to the client
     connection.send_result(msg["id"], {"results": results})
