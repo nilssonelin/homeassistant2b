@@ -785,14 +785,26 @@ async def handle_calendar_template_apply(
 
     results = []
     for event in events:
-        try:
-            # Add the templateId to the description.
-            event["description"] = f"{event['description']}\n\n\n{templateId}"
-            # Call async_create_event for each event in the template
-            await entity.async_create_event(**event)
-            results.append({"event": event, "status": "success"})
-        except HomeAssistantError as ex:
-            results.append({"event": event, "status": "failed", "error": str(ex)})
+        description = event.get(
+            "description", ""
+        )  # Safely get 'description' from the dictionary
+        lines = description.split("\n")
+        full_template_id = lines[-1].strip() if lines else ""
+
+        if full_template_id.startswith("Template:"):
+            # Remove the full_template_id from the description
+            event["description"] = "\n".join(
+                lines[:-1]
+            )  # Join all lines except the last one
+
+            try:
+                # Add the templateId to the description
+                event["description"] = f"{event['description']}\n\n\n{templateId}"
+                # Call async_create_event for each event in the template
+                await entity.async_create_event(**event)
+                results.append({"event": event, "status": "success"})
+            except HomeAssistantError as ex:
+                results.append({"event": event, "status": "failed", "error": str(ex)})
 
     # Send results back to the client
     connection.send_result(msg["id"], {"results": results})
@@ -856,6 +868,8 @@ class CalendarTemplateListView(http.HomeAssistantView):
         """Generate templates from the calendar events."""
         templates: dict[str, list[dict[str, Any]]] = {}  # {templateId: [events]}
         highest_weekday_for_template: dict[str, int] = {}
+        template_names: dict[str, str] = {}
+        result = []
 
         for event in calendar_event_list:
             description = event.description
@@ -886,6 +900,7 @@ class CalendarTemplateListView(http.HomeAssistantView):
             except ValueError:
                 continue  # Skip invalid UUID-based templateIds
 
+            template_names[unique_id] = template_name
             # Determine the day of the week
             weekday = start_date.weekday()  # 0 (Monday), 1 (Tuesday), ...
 
@@ -914,12 +929,11 @@ class CalendarTemplateListView(http.HomeAssistantView):
             )
 
         # Format templates into the required structure
-        result = []
         for unique_id, events in templates.items():
             result.append(
                 {
                     TEMPLATE_ID: unique_id,  # Only the UUID is used here
-                    TEMPLATE_NAME: template_name,
+                    TEMPLATE_NAME: template_names.get(unique_id, "Unknown Template"),
                     TEMPLATE_VIEW_EVENTS: events,
                 }
             )
