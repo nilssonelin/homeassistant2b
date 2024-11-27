@@ -883,8 +883,8 @@ class CalendarTemplateListView(http.HomeAssistantView):
             lines = description.split("\n")
             full_template_id = lines[-1].strip()
 
-            # Validate that the templateId format includes a UUID
-            # Example format: "Template: ExampleTemplate (550e8400-e29b-41d4-a716-446655440000)"
+            # Validate that the templateId format includes an ID
+            # Example format: "Template: ExampleTemplate (idididididididi)"
             if (
                 not full_template_id.startswith("Template:")
                 or "(" not in full_template_id
@@ -892,12 +892,9 @@ class CalendarTemplateListView(http.HomeAssistantView):
             ):
                 continue
 
-            # Extract the UUID part of the templateId
-            try:
-                template_name = full_template_id.split(":")[1].split("(")[0].strip()
-                unique_id = full_template_id.split("(")[-1].rstrip(")")
-            except ValueError:
-                continue  # Skip invalid UUID-based templateIds
+            # Extract the parts of the templateId
+            template_name = full_template_id.split(":")[1].split("(")[0].strip()
+            unique_id = full_template_id.split("(")[-1].rstrip(")")
 
             template_names[unique_id] = template_name
             # Determine the day of the week
@@ -939,7 +936,7 @@ class CalendarTemplateListView(http.HomeAssistantView):
         for unique_id, events in templates.items():
             result.append(
                 {
-                    TEMPLATE_ID: unique_id,  # Only the UUID is used here
+                    TEMPLATE_ID: unique_id,  # Only the id is used here
                     TEMPLATE_NAME: template_names.get(unique_id, "Unknown Template"),
                     TEMPLATE_VIEW_EVENTS: events,
                 }
