@@ -913,15 +913,23 @@ class CalendarTemplateListView(http.HomeAssistantView):
                 templates[unique_id] = []
 
             # Add the event to the correct template
-            templates[unique_id].append(
-                {
-                    "description": event.description,
-                    "start_time": start_date.time().isoformat(),  # type: ignore[union-attr]
-                    "end_time": end_date.time().isoformat(),  # type: ignore[union-attr]
-                    "summary": event.summary,
-                    "weekday_int": weekday,
-                }
-            )
+            new_event = {
+                "description": event.description,
+                "start_time": start_date.time().isoformat(),  # type: ignore[union-attr]
+                "end_time": end_date.time().isoformat(),  # type: ignore[union-attr]
+                "summary": event.summary,
+                "weekday_int": weekday,
+            }
+
+            # Avoid adding duplicates
+            if not any(
+                existing_event["summary"] == new_event["summary"]
+                and existing_event["start_time"] == new_event["start_time"]
+                and existing_event["weekday_int"] == new_event["weekday_int"]
+                for existing_event in templates[unique_id]
+            ):
+                # Add the event to the correct template
+                templates[unique_id].append(new_event)
 
             # Update the highest weekday seen for this template_id
             highest_weekday_for_template[unique_id] = max(
