@@ -10,7 +10,6 @@ from itertools import groupby
 import logging
 import re
 from typing import Any, Final, cast, final
-import uuid
 
 from aiohttp import web
 from dateutil.rrule import rrulestr
@@ -262,6 +261,7 @@ WEBSOCKET_TEMPLATE_SCHEMA = vol.Schema(
         # This is a dict with key TEMPLATE_EVENTS containing a list of events
         vol.Required(TEMPLATE_EVENTS): vol.All([WEBSOCKET_EVENT_SCHEMA]),
         vol.Required(TEMPLATE_NAME): cv.string,
+        vol.Required(TEMPLATE_ID): cv.string,
     }
 )
 
@@ -771,6 +771,7 @@ async def handle_calendar_template_apply(
     # Extract information from the calendar_template key in the message
     template_name = msg[CALENDAR_TEMPLATE][TEMPLATE_NAME]
     events = msg[CALENDAR_TEMPLATE][TEMPLATE_EVENTS]
+    unique_id = msg[CALENDAR_TEMPLATE][TEMPLATE_ID]
 
     if not events:
         connection.send_error(
@@ -778,7 +779,6 @@ async def handle_calendar_template_apply(
         )
         return
 
-    unique_id = uuid.uuid4()
     # Add the templateId to the description so that we can see what events belong together since
     # we do not want to use the db for persistence
     templateId = f"Template: {template_name} ({unique_id})"
@@ -895,8 +895,7 @@ class CalendarTemplateListView(http.HomeAssistantView):
             # Extract the UUID part of the templateId
             try:
                 template_name = full_template_id.split(":")[1].split("(")[0].strip()
-                uuid_part = full_template_id.split("(")[-1].rstrip(")")
-                unique_id = str(uuid.UUID(uuid_part))  # Ensure it's a valid UUID
+                unique_id = full_template_id.split("(")[-1].rstrip(")")
             except ValueError:
                 continue  # Skip invalid UUID-based templateIds
 
