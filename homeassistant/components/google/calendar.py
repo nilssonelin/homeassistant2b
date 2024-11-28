@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timedelta
 import logging
 from typing import Any, cast
 
 from gcal_sync.api import Range, SyncEventsRequest
 from gcal_sync.exceptions import ApiException
-from gcal_sync.model import AccessRole, DateOrDatetime, Event
+from gcal_sync.model import AccessRole, Attendee, DateOrDatetime, Event
 from gcal_sync.store import ScopedCalendarStore
 from gcal_sync.sync import CalendarEventSyncManager
 
@@ -59,6 +60,7 @@ from .const import (
     EVENT_IN_WEEKS,
     EVENT_START_DATE,
     EVENT_START_DATETIME,
+    RESP_DICT,
     FeatureAccess,
 )
 from .coordinator import CalendarQueryUpdateCoordinator, CalendarSyncUpdateCoordinator
@@ -262,7 +264,9 @@ class GoogleCalendarEntity(
         self._attr_entity_registry_enabled_default = entity_enabled
         if supports_write:
             self._attr_supported_features = (
-                CalendarEntityFeature.CREATE_EVENT | CalendarEntityFeature.DELETE_EVENT
+                CalendarEntityFeature.CREATE_EVENT
+                | CalendarEntityFeature.DELETE_EVENT
+                | CalendarEntityFeature.UPDATE_EVENT
             )
 
     @property
@@ -358,6 +362,7 @@ class GoogleCalendarEntity(
                 EVENT_DESCRIPTION: kwargs.get(EVENT_DESCRIPTION),
             }
         )
+        event.attendees = kwargs.get("attendees", [])
         if location := kwargs.get(EVENT_LOCATION):
             event.location = location
         if rrule := kwargs.get(EVENT_RRULE):
@@ -370,6 +375,101 @@ class GoogleCalendarEntity(
         except ApiException as err:
             raise HomeAssistantError(f"Error while creating event: {err!s}") from err
         await self.coordinator.async_refresh()
+
+    async def async_update_event(
+        self,
+        uid: str,
+        event: dict[str, Any],
+        recurrence_id: str | None = None,
+        recurrence_range: str | None = None,
+    ) -> None:
+        """Update existing event on the Calendar."""
+        try:
+            coordinator = cast(CalendarSyncUpdateCoordinator, self.coordinator)
+            api = coordinator.sync.api
+
+            if recurrence_id and recurrence_range == Range.THIS_AND_FUTURE:
+                # Update this and all future events. They share id and thus need no special handling.
+                updated_event = self._parse_patch_event(
+                    event, recurrence_id, recurrence_range
+                )
+                await api.async_patch_event(
+                    self.calendar_id, uid.split("@")[0], updated_event
+                )
+            elif recurrence_id:
+                # Update a single occurrence of a recurring event
+                updated_event = self._parse_patch_event(
+                    event, recurrence_id, recurrence_range
+                )
+
+                # Explicitly set the ID to modify the single instance
+                event_id = recurrence_id
+
+                await api.async_patch_event(self.calendar_id, event_id, updated_event)
+            else:
+                # Single event update.
+                updated_event = self._parse_patch_event(
+                    event, recurrence_id, recurrence_range
+                )
+                await api.async_patch_event(
+                    self.calendar_id, uid.split("@")[0], updated_event
+                )
+
+            # Force a refresh after update
+            await coordinator.async_refresh()
+
+        except ApiException as err:
+            raise HomeAssistantError(f"Error while updating event: {err!s}") from err
+
+    def _parse_patch_event(
+        self,
+        event: dict[str, Any],
+        recurrence_id: str | None,
+        recurrence_range: str | None,
+    ) -> dict[str, Any]:
+        timezone = str(event["dtstart"].tzinfo)
+
+        # Format datetime to RFC3339 specification
+        def format_datetime(dt: datetime) -> str:
+            return dt.isoformat()
+
+        # Create the updated event object with formatted values
+        updated_event = {
+            "summary": event["summary"],
+            "description": event["description"],
+            "start": {
+                "dateTime": format_datetime(event["dtstart"]),
+                "timeZone": timezone,
+            },
+            "end": {
+                "dateTime": format_datetime(event["dtend"]),
+                "timeZone": timezone,
+            },
+            "location": event["location"],
+            "attendees": [
+                {
+                    "id": attendee.get("id"),
+                    "email": attendee.get("email"),
+                    "optional": attendee.get("optional", False),
+                    "comment": attendee.get("comment"),
+                }
+                for attendee in event["attendees"]
+            ],
+        }
+        # If editing a single instance of a recurring event, add the necessary fields
+        if recurrence_id and recurrence_range == Range.NONE:
+            updated_event["id"] = recurrence_id
+            updated_event["recurringEventId"] = recurrence_id.split("_")[0]
+            updated_event["originalStartTime"] = {
+                "dateTime": format_datetime(event["dtstart"]),
+                "timeZone": timezone,
+            }
+
+            # Add recurrence to not break the chain.
+            if "recurrence" in event:
+                updated_event["recurrence"] = event["recurrence"]
+
+        return updated_event
 
     async def async_delete_event(
         self,
@@ -401,7 +501,7 @@ def _get_calendar_event(event: Event) -> CalendarEvent:
         and raw_rule.startswith(RRULE_PREFIX)
     ):
         rrule = raw_rule.removeprefix(RRULE_PREFIX)
-    return CalendarEvent(
+    return GoogleCalendarEvent(
         uid=event.ical_uuid,
         recurrence_id=event.id if event.recurring_event_id else None,
         rrule=rrule,
@@ -410,6 +510,17 @@ def _get_calendar_event(event: Event) -> CalendarEvent:
         end=event.end.value,
         description=event.description,
         location=event.location,
+        attendees=[
+            SerializableAttendee(
+                id=attendee.id,
+                email=attendee.email,
+                displayName=attendee.display_name,
+                optional=attendee.optional,
+                comment=attendee.comment,
+                responseStatus=attendee.response_status,
+            ).to_dict()
+            for attendee in event.attendees
+        ],
     )
 
 
@@ -456,6 +567,7 @@ async def async_create_event(entity: GoogleCalendarEntity, call: ServiceCall) ->
         description=call.data[EVENT_DESCRIPTION],
         start=start,
         end=end,
+        attendees=call.data.get("attendees", []),
     )
     if location := call.data.get(EVENT_LOCATION):
         event.location = location
@@ -469,3 +581,28 @@ async def async_create_event(entity: GoogleCalendarEntity, call: ServiceCall) ->
     except ApiException as err:
         raise HomeAssistantError(str(err)) from err
     entity.async_write_ha_state()
+
+
+@dataclasses.dataclass
+class GoogleCalendarEvent(CalendarEvent):
+    """An event on a calendar."""
+
+    attendees: list[dict[Any, Any]] | None = None
+    html_link: str | None = None
+
+
+class SerializableAttendee(Attendee):
+    """Class for serializing attendees."""
+
+    def to_dict(self) -> dict:
+        """Return a dictionary of the object."""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "display_name": self.display_name,
+            "optional": self.optional,
+            "comment": self.comment,
+            "response_status": RESP_DICT.get(self.response_status.value)
+            if self.response_status
+            else None,
+        }

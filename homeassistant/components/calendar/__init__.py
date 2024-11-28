@@ -46,6 +46,7 @@ from .const import (
     CONF_EVENT,
     DOMAIN,
     DOMAIN_DATA,
+    EVENT_ATTENDEES,
     EVENT_DESCRIPTION,
     EVENT_DURATION,
     EVENT_END,
@@ -171,6 +172,17 @@ def _has_same_type(*keys: Any) -> Callable[[dict[str, Any]], dict[str, Any]]:
     return validate
 
 
+def _validate_attendees(value: Any) -> Any:
+    """Validate attendees."""
+    if value is None:
+        return value
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return value
+    raise vol.Invalid("Attendees must be a string or a list")
+
+
 def _validate_rrule(value: Any) -> str:
     """Validate a recurrence rule string."""
     if value is None:
@@ -248,6 +260,7 @@ WEBSOCKET_EVENT_SCHEMA = vol.Schema(
             vol.Optional(EVENT_DESCRIPTION): cv.string,
             vol.Optional(EVENT_LOCATION): cv.string,
             vol.Optional(EVENT_RRULE): _validate_rrule,
+            vol.Optional(EVENT_ATTENDEES): _validate_attendees,
         },
         _has_same_type(EVENT_START, EVENT_END),
         _has_consistent_timezone(EVENT_START, EVENT_END),
