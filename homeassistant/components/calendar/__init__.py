@@ -794,7 +794,7 @@ async def handle_calendar_template_apply(
 
     # Add the templateId to the description so that we can see what events belong together since
     # we do not want to use the db for persistence
-    templateId = f"Template: {template_name} ({unique_id})"
+    template_id = f"Template: {template_name} ({unique_id})"
 
     results = []
     for event in events:
@@ -812,7 +812,7 @@ async def handle_calendar_template_apply(
 
         try:
             # Add the templateId to the description
-            event["description"] = f"{event['description']}\n\n\n{templateId}"
+            event["description"] = f"{event['description']}\n\n\n{template_id}"
             # Call async_create_event for each event in the template
             await entity.async_create_event(**event)
             results.append({"event": event, "status": "success"})
@@ -884,7 +884,6 @@ class CalendarTemplateListView(http.HomeAssistantView):
         templates: dict[str, list[dict[str, Any]]] = {}  # {templateId: [events]}
         highest_weekday_for_template: dict[str, int] = {}
         template_names: dict[str, str] = {}
-        result = []
 
         for event in calendar_event_list:
             description = event.description
@@ -900,11 +899,7 @@ class CalendarTemplateListView(http.HomeAssistantView):
 
             # Validate that the templateId format includes an ID
             # Example format: "Template: ExampleTemplate (idididididididi)"
-            if (
-                not full_template_id.startswith("Template:")
-                or "(" not in full_template_id
-                or ")" not in full_template_id
-            ):
+            if self._template_id_includes_id(full_template_id):
                 continue
 
             # Extract the parts of the templateId
@@ -933,30 +928,54 @@ class CalendarTemplateListView(http.HomeAssistantView):
             }
 
             # Avoid adding duplicates
-            if not any(
-                existing_event["summary"] == new_event["summary"]
-                and existing_event["start_time"] == new_event["start_time"]
-                and existing_event["weekday_int"] == new_event["weekday_int"]
-                for existing_event in templates[unique_id]
-            ):
-                # Add the event to the correct template
-                templates[unique_id].append(new_event)
+            if self._is_event_duplicate(unique_id, templates, new_event):
+                continue
+            # Add the event to the correct template
+            templates[unique_id].append(new_event)
 
             # Update the highest weekday seen for this template_id
             highest_weekday_for_template[unique_id] = max(
                 highest_weekday_for_template.get(unique_id, -1), weekday
             )
 
-        # Format templates into the required structure
+        # Format templates into the required structure and return
+        return self._format_templates(templates, template_names)
+
+    def _template_id_includes_id(self, template_id: str) -> bool:
+        """Validate the format of the template_id."""
+        return (
+            not template_id.startswith("Template:")
+            or "(" not in template_id
+            or ")" not in template_id
+        )
+
+    def _is_event_duplicate(
+        self,
+        unique_id: str,
+        templates: dict[str, list[dict[str, Any]]],
+        new_event: dict[str, int | str | Any | None],
+    ) -> bool:
+        """Check if the event is a duplicate for the given template."""
+        return any(
+            existing_event["summary"] == new_event["summary"]
+            and existing_event["start_time"] == new_event["start_time"]
+            and existing_event["weekday_int"] == new_event["weekday_int"]
+            for existing_event in templates[unique_id]
+        )
+
+    def _format_templates(
+        self, templates: dict[str, list[dict[str, Any]]], template_names: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Format templates into the required structure."""
+        result = []
         for unique_id, events in templates.items():
             result.append(
                 {
-                    TEMPLATE_ID: unique_id,  # Only the id is used here
+                    TEMPLATE_ID: unique_id,
                     TEMPLATE_NAME: template_names.get(unique_id, "Unknown Template"),
                     TEMPLATE_VIEW_EVENTS: events,
                 }
             )
-
         return result
 
 
