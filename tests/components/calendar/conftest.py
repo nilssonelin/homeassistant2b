@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from homeassistant.components.calendar import DOMAIN, CalendarEntity, CalendarEvent
+from homeassistant.components.calendar import (
+    DOMAIN,
+    CalendarEntity,
+    CalendarEntityFeature,
+    CalendarEvent,
+)
 from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -43,11 +48,20 @@ class MockCalendarEntity(CalendarEntity):
     """Test Calendar entity."""
 
     _attr_has_entity_name = True
+    _attr_supported_features = 0
 
-    def __init__(self, name: str, events: list[CalendarEvent] | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        events: list[CalendarEvent] | None = None,
+        support_create: bool = False,
+    ) -> None:
         """Initialize entity."""
         self._attr_name = name.capitalize()
         self._events = events or []
+
+        if support_create:
+            self._attr_supported_features |= CalendarEntityFeature.CREATE_EVENT
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -89,6 +103,20 @@ class MockCalendarEntity(CalendarEntity):
                 continue
             events.append(event)
         return events
+
+    async def async_create_event(self, **kwargs: Any) -> None:
+        """Mock async_create_event."""
+        dtstart = kwargs["dtstart"]
+        dtend = kwargs["dtend"]
+
+        event = CalendarEvent(
+            start=dtstart,
+            end=dtend,
+            summary=kwargs["summary"],
+            description=kwargs.get("description"),
+            location=kwargs.get("location"),
+        )
+        self._events.append(event)
 
 
 @pytest.fixture
@@ -196,4 +224,25 @@ def create_test_entities() -> list[MockCalendarEntity]:
     )
     entity2.async_get_events = AsyncMock(wraps=entity2.async_get_events)
 
-    return [entity1, entity2]
+    one_week_from_half_hour_from_now = half_hour_from_now + datetime.timedelta(weeks=1)
+    entity3 = MockCalendarEntity(
+        "Calendar 3",
+        [
+            CalendarEvent(
+                start=half_hour_from_now,
+                end=half_hour_from_now + datetime.timedelta(minutes=60),
+                summary="Template Event",
+                description="Template event description\nTemplate: Swimming (templateId1)",
+            ),
+            CalendarEvent(
+                start=one_week_from_half_hour_from_now,
+                end=one_week_from_half_hour_from_now + datetime.timedelta(minutes=60),
+                summary="Template Event",
+                description="Future Description\nTemplate: Swimming (templateId1)",
+            ),
+        ],
+        support_create=True,
+    )
+    entity3.async_get_events = AsyncMock(wraps=entity3.async_get_events)
+
+    return [entity1, entity2, entity3]

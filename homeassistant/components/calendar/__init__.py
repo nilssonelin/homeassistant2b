@@ -847,6 +847,8 @@ class CalendarTemplateListView(http.HomeAssistantView):
 
         # Arbitrary start and end dates to fetch a lot of events to get all templates
         # (that will be created during this project at least)
+        # Possible improvement for this could be to create one set of template events in year
+        # 1 and only parse from that year to get all templates
         start = "2024-01-01T00:00:00.000Z"
         end = "2026-12-12T23:00:00.000Z"
 

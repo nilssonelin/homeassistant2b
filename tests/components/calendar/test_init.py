@@ -121,6 +121,7 @@ async def test_calendars_http_api(
     assert data == [
         {"entity_id": "calendar.calendar_1", "name": "Calendar 1"},
         {"entity_id": "calendar.calendar_2", "name": "Calendar 2"},
+        {"entity_id": "calendar.calendar_3", "name": "Calendar 3"},
     ]
 
 
@@ -189,6 +190,60 @@ async def test_calendars_http_api(
                     "summary": "Bastille Day Party",
                     "dtstart": "1997-07-14T17:00:00+00:00",
                     "dtend": "1997-07-15T04:00:00+00:00",
+                },
+            },
+            "not_found",
+        ),
+        (
+            {
+                "type": "calendar/template/apply",
+                "entity_id": "calendar.calendar_1",
+                "calendar_template": {
+                    "template_events": [
+                        {
+                            "summary": "Short late night swim",
+                            "dtstart": "2024-12-03T17:00:00.000Z",
+                            "dtend": "2024-12-03T17:30:00.000Z",
+                            "rrule": "FREQ=WEEKLY;COUNT=1;INTERVAL=1",
+                            "description": "Go for a swim at valhalla\n\n\n\n\nTemplate: Swimming (m49uy3rh-8kb9h2bq8)",
+                        },
+                        {
+                            "summary": "Morning long swim!",
+                            "dtstart": "2024-12-07T07:00:00.000Z",
+                            "dtend": "2024-12-07T09:00:00.000Z",
+                            "rrule": "FREQ=WEEKLY;COUNT=1;INTERVAL=1",
+                            "description": "Longer swim this time\n\n\n\n\nTemplate: Swimming (m49uy3rh-8kb9h2bq8)",
+                        },
+                    ],
+                    "template_name": "Swimming",
+                    "template_id": "m49v0n9o-ng9938yep",
+                },
+            },
+            "not_supported",
+        ),
+        (
+            {
+                "type": "calendar/template/apply",
+                "entity_id": "calendar.calendar_99",
+                "calendar_template": {
+                    "template_events": [
+                        {
+                            "summary": "Short late night swim",
+                            "dtstart": "2024-12-03T17:00:00.000Z",
+                            "dtend": "2024-12-03T17:30:00.000Z",
+                            "rrule": "FREQ=WEEKLY;COUNT=1;INTERVAL=1",
+                            "description": "Go for a swim at valhalla\n\n\n\n\nTemplate: Swimming (m49uy3rh-8kb9h2bq8)",
+                        },
+                        {
+                            "summary": "Morning long swim!",
+                            "dtstart": "2024-12-07T07:00:00.000Z",
+                            "dtend": "2024-12-07T09:00:00.000Z",
+                            "rrule": "FREQ=WEEKLY;COUNT=1;INTERVAL=1",
+                            "description": "Longer swim this time\n\n\n\n\nTemplate: Swimming (m49uy3rh-8kb9h2bq8)",
+                        },
+                    ],
+                    "template_name": "Swimming",
+                    "template_id": "m49v0n9o-ng9938yep",
                 },
             },
             "not_found",
@@ -548,3 +603,111 @@ async def test_list_events_missing_fields(hass: HomeAssistant) -> None:
             blocking=True,
             return_response=True,
         )
+
+
+async def test_template_apply_works(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    hass_client: ClientSessionGenerator,
+) -> None:
+    """Test template apply works as expected."""
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {
+            "id": 1,
+            "type": "calendar/template/apply",
+            "entity_id": "calendar.calendar_3",
+            "calendar_template": {
+                "template_events": [
+                    {
+                        "summary": "Short late night swim",
+                        "dtstart": "2024-12-03T17:00:00.000Z",
+                        "dtend": "2024-12-03T17:30:00.000Z",
+                        "rrule": "FREQ=WEEKLY;COUNT=1;INTERVAL=1",
+                        "description": "Go for a swim at valhalla\n\n\n\n\nTemplate: Swimming (m49uy3rh-8kb9h2bq8)",
+                    },
+                    {
+                        "summary": "Morning long swim!",
+                        "dtstart": "2024-12-07T07:00:00.000Z",
+                        "dtend": "2024-12-07T09:00:00.000Z",
+                        "rrule": "FREQ=WEEKLY;COUNT=1;INTERVAL=1",
+                        "description": "Longer swim this time\n\n\n\n\nTemplate: Swimming (m49uy3rh-8kb9h2bq8)",
+                    },
+                ],
+                "template_name": "Swimming2",
+                "template_id": "templateId2",
+            },
+        }
+    )
+
+    resp = await client.receive_json()
+    assert resp.get("id") == 1
+    assert resp.get("type") == "result"
+    assert resp.get("success") is True
+
+    # Assert two events added to template
+    results = resp["result"]["results"]
+    assert len(results) == 2
+
+    # Assert get returns both newly added template and template already in calendar 3
+    http_client = await hass_client()
+    response = await http_client.get("/api/calendars/calendar.calendar_3/templates")
+    assert response.status == HTTPStatus.OK
+    templates = await response.json()
+
+    # Assert 2 templates
+    assert len(templates) == 2
+
+    # Assert template ids match expected ids
+    template_ids = [template["template_id"] for template in templates]
+    assert "templateId1" in template_ids
+    assert "templateId2" in template_ids
+
+    # Assert template names match expected names
+    template_names = [template["template_name"] for template in templates]
+    assert "Swimming" in template_names
+    assert "Swimming2" in template_names
+
+    # Assert the correct number of events for each template
+    assert len(templates[0]["template_view_events"]) == 1  # Only 1 event in templateId1
+    assert len(templates[1]["template_view_events"]) == 2  # Two events in templateId2
+
+
+async def test_template_empty_events_should_error(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test error when template has empty events."""
+    client = await hass_ws_client(hass)
+
+    await client.send_json(
+        {
+            "id": 1,
+            "type": "calendar/template/apply",
+            "entity_id": "calendar.calendar_3",
+            "calendar_template": {
+                "template_events": [],  # Empty list of events
+                "template_name": "Empty Template",
+                "template_id": "empty-template-id",
+            },
+        }
+    )
+
+    resp = await client.receive_json()
+    assert resp.get("id") == 1
+    assert resp.get("error") is not None
+    assert resp["error"].get("code") == "invalid_data"
+
+
+async def test_get_template_api_no_duplicates(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator
+) -> None:
+    """Test get templates returns no duplicates."""
+    client = await hass_client()
+    response = await client.get("/api/calendars/calendar.calendar_3/templates")
+    assert response.status == HTTPStatus.OK
+    templates = await response.json()
+
+    # Assert that it does not get the event one week after since for the template, it is the same event
+    assert len(templates[0]["template_view_events"]) == 1
+    assert templates[0]["template_name"] == "Swimming"
+    assert templates[0]["template_view_events"][0]["summary"] == "Template Event"
