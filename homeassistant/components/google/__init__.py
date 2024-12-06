@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 import logging
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 from gcal_sync.api import GoogleCalendarService
@@ -282,15 +282,12 @@ async def async_setup_add_event_service(
             )
             end = DateOrDatetime(date_time=end_dt, timezone=str(hass.config.time_zone))
 
-        if start is None or end is None:
-            raise ValueError(
-                "Missing required fields to set start or end date/datetime"
-            )
+        _validate_start_and_end(start, end)
         event = Event(
             summary=call.data[EVENT_SUMMARY],
             description=call.data[EVENT_DESCRIPTION],
-            start=start,
-            end=end,
+            start=cast(DateOrDatetime, start),
+            end=cast(DateOrDatetime, end),
         )
         if location := call.data.get(EVENT_LOCATION):
             event.location = location
@@ -351,3 +348,11 @@ def update_config(path: str, calendar: dict[str, Any]) -> None:
             yaml.dump([calendar], out, default_flow_style=False)
     except FileNotFoundError as err:
         _LOGGER.debug("Error persisting calendar configuration: %s", err)
+
+
+def _validate_start_and_end(
+    start: DateOrDatetime | None, end: DateOrDatetime | None
+) -> None:
+    """Validate that start and end are set."""
+    if start is None or end is None:
+        raise ValueError("Missing required fields to set start or end date/datetime")
