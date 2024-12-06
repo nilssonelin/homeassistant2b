@@ -61,6 +61,8 @@ EVENT_TIME_FIELDS = {
 EVENT_TYPES = "event_types"
 EVENT_DURATION = "duration"
 
+ENITITY_NOT_FOUND_ERROR = "Entity not found"
+
 # Fields for the list events service
 LIST_EVENT_FIELDS = {
     "start",

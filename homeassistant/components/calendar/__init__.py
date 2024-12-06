@@ -46,6 +46,7 @@ from .const import (
     CONF_EVENT,
     DOMAIN,
     DOMAIN_DATA,
+    ENITITY_NOT_FOUND_ERROR,
     EVENT_ATTENDEES,
     EVENT_DESCRIPTION,
     EVENT_DURATION,
@@ -732,7 +733,7 @@ async def handle_calendar_event_create(
 ) -> None:
     """Handle creation of a calendar event."""
     if not (entity := hass.data[DOMAIN_DATA].get_entity(msg["entity_id"])):
-        connection.send_error(msg["id"], ERR_NOT_FOUND, "Entity not found")
+        connection.send_error(msg["id"], ERR_NOT_FOUND, ENITITY_NOT_FOUND_ERROR)
         return
 
     if (
@@ -767,7 +768,7 @@ async def handle_calendar_template_apply(
 ) -> None:
     """Handle creation of multiple calendar events from a template."""
     if not (entity := hass.data[DOMAIN_DATA].get_entity(msg["entity_id"])):
-        connection.send_error(msg["id"], ERR_NOT_FOUND, "Entity not found")
+        connection.send_error(msg["id"], ERR_NOT_FOUND, ENITITY_NOT_FOUND_ERROR)
         return
 
     if (
@@ -997,7 +998,7 @@ async def handle_calendar_event_delete(
     """Handle delete of a calendar event."""
 
     if not (entity := hass.data[DOMAIN_DATA].get_entity(msg["entity_id"])):
-        connection.send_error(msg["id"], ERR_NOT_FOUND, "Entity not found")
+        connection.send_error(msg["id"], ERR_NOT_FOUND, ENITITY_NOT_FOUND_ERROR)
         return
 
     if (
@@ -1042,7 +1043,7 @@ async def handle_calendar_event_update(
 ) -> None:
     """Handle creation of a calendar event."""
     if not (entity := hass.data[DOMAIN_DATA].get_entity(msg["entity_id"])):
-        connection.send_error(msg["id"], ERR_NOT_FOUND, "Entity not found")
+        connection.send_error(msg["id"], ERR_NOT_FOUND, ENITITY_NOT_FOUND_ERROR)
         return
 
     if (
