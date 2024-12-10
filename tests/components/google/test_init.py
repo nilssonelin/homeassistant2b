@@ -82,7 +82,7 @@ def assert_state(actual: State | None, expected: State | None) -> None:
 def add_event_call_service(
     hass: HomeAssistant,
     request: pytest.FixtureRequest,
-) -> Callable[[dict[str, Any]], Awaitable[None]]:
+) -> tuple[Callable[[dict[str, Any]], Awaitable[None]], str]:
     """Fixture for calling the add or create event service."""
     (domain, service_call, data, target) = request.param
 
@@ -100,7 +100,7 @@ def add_event_call_service(
             blocking=True,
         )
 
-    return call_service
+    return call_service, service_call
 
 
 async def test_unload_entry(
@@ -422,7 +422,7 @@ async def test_add_event_invalid_params(
     mock_calendars_list: ApiResult,
     test_api_calendar: dict[str, Any],
     mock_events_list: ApiResult,
-    add_event_call_service: Callable[[dict[str, Any]], Awaitable[None]],
+    add_event_call_service: tuple[Callable[[dict[str, Any]], Awaitable[None]], str],
     date_fields: dict[str, Any],
     expected_error: type[Exception],
     error_match: str | None,
@@ -433,8 +433,9 @@ async def test_add_event_invalid_params(
     mock_events_list({})
     assert await component_setup()
 
+    call_service, _ = add_event_call_service
     with pytest.raises(expected_error, match=error_match):
-        await add_event_call_service(date_fields)
+        await call_service(date_fields)
 
 
 @pytest.mark.parametrize(
@@ -464,7 +465,7 @@ async def test_add_event_date_in_x(
     start_timedelta: datetime.timedelta,
     end_timedelta: datetime.timedelta,
     aioclient_mock: AiohttpClientMocker,
-    add_event_call_service: Callable[[dict[str, Any]], Awaitable[None]],
+    add_event_call_service: tuple[Callable[[dict[str, Any]], Awaitable[None]], str],
 ) -> None:
     """Test service call that adds an event with various time ranges."""
 
@@ -481,14 +482,20 @@ async def test_add_event_date_in_x(
         calendar_id=CALENDAR_ID,
     )
 
-    await add_event_call_service(date_fields)
+    call_service, service_call = add_event_call_service
+    await call_service(date_fields)
     assert len(aioclient_mock.mock_calls) == 1
-    assert aioclient_mock.mock_calls[0][2] == {
+    expected_body = {
         "summary": TEST_EVENT_SUMMARY,
         "description": TEST_EVENT_DESCRIPTION,
         "start": {"date": start_date.date().isoformat()},
         "end": {"date": end_date.date().isoformat()},
     }
+
+    if service_call != SERVICE_ADD_EVENT:
+        expected_body["attendees"] = []
+
+    assert aioclient_mock.mock_calls[0][2] == expected_body
 
 
 async def test_add_event_date(
@@ -499,7 +506,7 @@ async def test_add_event_date(
     mock_insert_event: Callable[..., None],
     mock_events_list: ApiResult,
     aioclient_mock: AiohttpClientMocker,
-    add_event_call_service: Callable[[dict[str, Any]], Awaitable[None]],
+    add_event_call_service: tuple[Callable[[dict[str, Any]], Awaitable[None]], str],
 ) -> None:
     """Test service call that sets a date range."""
 
@@ -515,20 +522,26 @@ async def test_add_event_date(
     mock_insert_event(
         calendar_id=CALENDAR_ID,
     )
-
-    await add_event_call_service(
+    call_service, service_call = add_event_call_service
+    await call_service(
         {
             "start_date": today.isoformat(),
             "end_date": end_date.isoformat(),
         },
     )
     assert len(aioclient_mock.mock_calls) == 1
-    assert aioclient_mock.mock_calls[0][2] == {
+
+    expected_body = {
         "summary": TEST_EVENT_SUMMARY,
         "description": TEST_EVENT_DESCRIPTION,
         "start": {"date": today.isoformat()},
         "end": {"date": end_date.isoformat()},
     }
+
+    if service_call != SERVICE_ADD_EVENT:
+        expected_body["attendees"] = []
+
+    assert aioclient_mock.mock_calls[0][2] == expected_body
 
 
 async def test_add_event_date_time(
@@ -539,7 +552,7 @@ async def test_add_event_date_time(
     test_api_calendar: dict[str, Any],
     mock_events_list: ApiResult,
     aioclient_mock: AiohttpClientMocker,
-    add_event_call_service: Callable[[dict[str, Any]], Awaitable[None]],
+    add_event_call_service: tuple[Callable[[dict[str, Any]], Awaitable[None]], str],
 ) -> None:
     """Test service call that adds an event with a date time range."""
 
@@ -556,14 +569,15 @@ async def test_add_event_date_time(
         calendar_id=CALENDAR_ID,
     )
 
-    await add_event_call_service(
+    call_service, service_call = add_event_call_service
+    await call_service(
         {
             "start_date_time": start_datetime.isoformat(),
             "end_date_time": end_datetime.isoformat(),
         },
     )
     assert len(aioclient_mock.mock_calls) == 1
-    assert aioclient_mock.mock_calls[0][2] == {
+    expected_body = {
         "summary": TEST_EVENT_SUMMARY,
         "description": TEST_EVENT_DESCRIPTION,
         "start": {
@@ -575,6 +589,11 @@ async def test_add_event_date_time(
             "timeZone": "America/Regina",
         },
     }
+
+    if service_call != SERVICE_ADD_EVENT:
+        expected_body["attendees"] = []
+
+    assert aioclient_mock.mock_calls[0][2] == expected_body
 
 
 @pytest.mark.parametrize(
@@ -637,7 +656,7 @@ async def test_add_event_failure(
     test_api_calendar: dict[str, Any],
     mock_events_list: ApiResult,
     mock_insert_event: Callable[..., None],
-    add_event_call_service: Callable[[dict[str, Any]], Awaitable[None]],
+    add_event_call_service: tuple[Callable[[dict[str, Any]], Awaitable[None]], str],
 ) -> None:
     """Test service calls with incorrect fields."""
 
@@ -650,10 +669,9 @@ async def test_add_event_failure(
         exc=ClientError(),
     )
 
+    call_service, _ = add_event_call_service
     with pytest.raises(HomeAssistantError):
-        await add_event_call_service(
-            {"start_date": "2022-05-01", "end_date": "2022-05-02"}
-        )
+        await call_service({"start_date": "2022-05-01", "end_date": "2022-05-02"})
 
 
 async def test_add_event_location(
@@ -664,7 +682,7 @@ async def test_add_event_location(
     mock_insert_event: Callable[..., None],
     mock_events_list: ApiResult,
     aioclient_mock: AiohttpClientMocker,
-    add_event_call_service: Callable[[dict[str, Any]], Awaitable[None]],
+    add_event_call_service: tuple[Callable[[dict[str, Any]], Awaitable[None]], str],
 ) -> None:
     """Test service call that sets a location field."""
 
@@ -681,7 +699,9 @@ async def test_add_event_location(
         calendar_id=CALENDAR_ID,
     )
 
-    await add_event_call_service(
+    call_service, service_call = add_event_call_service
+
+    await call_service(
         {
             "start_date": today.isoformat(),
             "end_date": end_date.isoformat(),
@@ -689,13 +709,21 @@ async def test_add_event_location(
         },
     )
     assert len(aioclient_mock.mock_calls) == 1
-    assert aioclient_mock.mock_calls[0][2] == {
+
+    # Build the expected request body
+    expected_body = {
         "summary": TEST_EVENT_SUMMARY,
         "description": TEST_EVENT_DESCRIPTION,
         "location": TEST_EVENT_LOCATION,
         "start": {"date": today.isoformat()},
         "end": {"date": end_date.isoformat()},
     }
+
+    # Include attendees only for certain service calls
+    if service_call != SERVICE_ADD_EVENT:
+        expected_body["attendees"] = []
+
+    assert aioclient_mock.mock_calls[0][2] == expected_body
 
 
 @pytest.mark.parametrize(

@@ -435,8 +435,8 @@ class GoogleCalendarEntity(
 
         # Create the updated event object with formatted values
         updated_event = {
-            "summary": event["summary"],
-            "description": event["description"],
+            "summary": event.get("summary"),
+            "description": event.get("description"),
             "start": {
                 "dateTime": format_datetime(event["dtstart"]),
                 "timeZone": timezone,
@@ -445,7 +445,7 @@ class GoogleCalendarEntity(
                 "dateTime": format_datetime(event["dtend"]),
                 "timeZone": timezone,
             },
-            "location": event["location"],
+            "location": event.get("location"),
             "attendees": [
                 {
                     "id": attendee.get("id"),
@@ -453,7 +453,7 @@ class GoogleCalendarEntity(
                     "optional": attendee.get("optional", False),
                     "comment": attendee.get("comment"),
                 }
-                for attendee in event["attendees"]
+                for attendee in event.get("attendees", [])
             ],
         }
         # If editing a single instance of a recurring event, add the necessary fields
