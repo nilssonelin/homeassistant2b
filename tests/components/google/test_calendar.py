@@ -147,7 +147,7 @@ async def test_all_day_event(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -178,7 +178,7 @@ async def test_future_event(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -209,7 +209,7 @@ async def test_in_progress_event(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -242,7 +242,7 @@ async def test_offset_in_progress_event(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -275,7 +275,7 @@ async def test_all_day_offset_in_progress_event(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -310,7 +310,7 @@ async def test_all_day_offset_event(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -342,7 +342,7 @@ async def test_missing_summary(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -874,6 +874,7 @@ async def test_websocket_create(
             "timeZone": "America/Regina",
         },
         "end": {"dateTime": "1997-07-14T22:00:00-06:00", "timeZone": "America/Regina"},
+        "attendees": [],
     }
 
 
@@ -917,6 +918,7 @@ async def test_websocket_create_all_day(
         },
         "end": {"date": "1997-07-15"},
         "recurrence": ["RRULE:FREQ=YEARLY"],
+        "attendees": [],
     }
 
 
@@ -1249,7 +1251,7 @@ async def test_all_day_event_without_duration(
         "end_time": expected_end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
@@ -1308,7 +1310,7 @@ async def test_event_differs_timezone(
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
         "description": event["description"],
-        "supported_features": 3,
+        "supported_features": 7,
     }
 
 
