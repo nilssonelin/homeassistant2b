@@ -390,30 +390,18 @@ class GoogleCalendarEntity(
 
             if recurrence_id and recurrence_range == Range.THIS_AND_FUTURE:
                 # Update this and all future events. They share id and thus need no special handling.
-                updated_event = self._parse_patch_event(
-                    event, recurrence_id, recurrence_range
-                )
-                await api.async_patch_event(
-                    self.calendar_id, uid.split("@")[0], updated_event
-                )
+                event_id = uid.split("@")[0]
             elif recurrence_id:
-                # Update a single occurrence of a recurring event
-                updated_event = self._parse_patch_event(
-                    event, recurrence_id, recurrence_range
-                )
-
-                # Explicitly set the ID to modify the single instance
+                # Update a single event in a recurring series
                 event_id = recurrence_id
-
-                await api.async_patch_event(self.calendar_id, event_id, updated_event)
             else:
-                # Single event update.
-                updated_event = self._parse_patch_event(
-                    event, recurrence_id, recurrence_range
-                )
-                await api.async_patch_event(
-                    self.calendar_id, uid.split("@")[0], updated_event
-                )
+                # Update the single event & fallback to the event id
+                event_id = uid.split("@")[0]
+
+            updated_event = self._parse_patch_event(
+                event, recurrence_id, recurrence_range
+            )
+            await api.async_patch_event(self.calendar_id, event_id, updated_event)
 
             # Force a refresh after update
             await coordinator.async_refresh()
